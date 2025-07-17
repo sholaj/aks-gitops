@@ -1,0 +1,32 @@
+[
+  {
+    "title": "Replace ARM AKS Provisioning with ASO Manifests",
+    "description": "As a platform engineer  \nI want to use Azure Service Operator (ASO) to provision AKS clusters declaratively  \nSo that I can enable GitOps-native, Kubernetes-aligned infrastructure management\n\n### Acceptance Criteria\n- `ManagedCluster` ASO manifests exist under `infrastructure/aks/managed-cluster.yaml`\n- FluxCD successfully reconciles the AKS cluster from Git\n- Cluster includes identity, auto-upgrade, and network profile configurations\n- Validation testing confirms cluster is reachable post-deploy",
+    "labels": "aso,aks,infrastructure-as-code"
+  },
+  {
+    "title": "Convert Agent Pools to ASO-Based Definitions",
+    "description": "As a platform engineer  \nI want agent pools defined using ASO  \nSo that I can manage system and user pools in code with scaling and taints configured declaratively\n\n### Acceptance Criteria\n- `AgentPool` manifests exist per pool in `infrastructure/aks/agent-pools.yaml`\n- System/user pool logic preserved from ARM template\n- MaxCount/MinCount, availability zones, and taints are reflected accurately\n- Pools scale correctly via ASO updates",
+    "labels": "aso,nodepools,autoscaling"
+  },
+  {
+    "title": "Migrate Key Vault Integration to ASO",
+    "description": "As a platform engineer  \nI want to configure Azure Key Vault using ASO  \nSo that secrets integration with CSI and workload identities is fully declarative\n\n### Acceptance Criteria\n- `Vault` manifest defined in `infrastructure/keyvault/vault.yaml`\n- Access policies generated using ASO referencing UAMI\n- CSI secrets driver deployment supports the mounted KV integration\n- InSpec profile confirms read permission on secrets",
+    "labels": "aso,keyvault,secrets"
+  },
+  {
+    "title": "Replace Bash-Based Workload Identity Setup with ASO",
+    "description": "As a platform engineer  \nI want to manage User Assigned Managed Identities using ASO  \nSo that identity lifecycle is GitOps-driven and RBAC compliant\n\n### Acceptance Criteria\n- UAMI defined in `infrastructure/identity/user-assigned-identity.yaml`\n- Cluster identity reference correctly wired to AKS ASO object\n- Role assignment logic externalized or replaced via Flux/OPA if necessary\n- InSpec tests confirm identity presence and usage",
+    "labels": "aso,identity,workloadidentity"
+  },
+  {
+    "title": "Add InSpec-Based Compliance Tests for ASO Infra",
+    "description": "As a security-conscious engineer  \nI want to validate ASO-provisioned resources using InSpec  \nSo that I ensure compliance with Azure security and tagging policies\n\n### Acceptance Criteria\n- InSpec profiles defined for AKS, KeyVault, UAMI\n- GitLab test stage added to run `inspec exec` against Azure subscription\n- Reports uploaded as artifacts and optionally sent to a dashboard or email\n- Includes at least 3 tests per resource type (e.g. `rbac_enabled`, `vnet_injected`, `kv_access_allowed`)",
+    "labels": "compliance,inspec,aks"
+  },
+  {
+    "title": "Replace Monitoring Setup Scripts with HelmRelease Manifests",
+    "description": "As a platform engineer  \nI want to deploy Prometheus and Grafana using HelmRelease  \nSo that monitoring stack provisioning is Flux-native and declarative\n\n### Acceptance Criteria\n- `HelmRelease` manifests for Prometheus and Grafana stored in `apps/monitoring/`\n- Custom `values.yaml` configured with appropriate datasources and dashboards\n- Flux successfully deploys charts on top of ASO-managed cluster\n- Goss or curl-based tests confirm availability of metrics endpoints",
+    "labels": "monitoring,helm,flux"
+  }
+]
