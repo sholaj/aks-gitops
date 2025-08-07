@@ -1,0 +1,192 @@
+---
+# Compliance Baselines for ASO Infrastructure
+# Define minimum compliance requirements for different environments
+
+environments:
+  production:
+    aks:
+      rbac_enabled: true
+      network_policy_required: true
+      private_cluster_required: true
+      authorized_ip_ranges_required: true
+      monitoring_required: true
+      azure_ad_integration_required: true
+      encryption_at_host_required: true
+    
+    keyvault:
+      soft_delete_required: true
+      purge_protection_required: true
+      network_restrictions_required: true
+      rbac_authorization_required: true
+      private_endpoints_required: true
+      logging_required: true
+    
+    resource_groups:
+      resource_locks_required: true
+      policy_compliance_required: true
+    
+    virtual_networks:
+      ddos_protection_required: true
+      nsg_required_on_subnets: true
+      private_ip_ranges_only: true
+    
+    tagging:
+      required_tags:
+        - environment
+        - owner
+        - cost-center
+        - project
+        - backup-policy
+        - compliance-framework
+      cost_management_tags:
+        - cost-center
+        - budget-code
+        - project
+
+  staging:
+    aks:
+      rbac_enabled: true
+      network_policy_required: true
+      private_cluster_required: false
+      authorized_ip_ranges_required: false
+      monitoring_required: true
+      azure_ad_integration_required: true
+      encryption_at_host_required: true
+    
+    keyvault:
+      soft_delete_required: true
+      purge_protection_required: true
+      network_restrictions_required: false
+      rbac_authorization_required: true
+      private_endpoints_required: false
+      logging_required: true
+    
+    resource_groups:
+      resource_locks_required: false
+      policy_compliance_required: true
+    
+    virtual_networks:
+      ddos_protection_required: false
+      nsg_required_on_subnets: true
+      private_ip_ranges_only: true
+    
+    tagging:
+      required_tags:
+        - environment
+        - owner
+        - cost-center
+        - project
+      cost_management_tags:
+        - cost-center
+        - project
+
+  development:
+    aks:
+      rbac_enabled: true
+      network_policy_required: false
+      private_cluster_required: false
+      authorized_ip_ranges_required: false
+      monitoring_required: false
+      azure_ad_integration_required: false
+      encryption_at_host_required: false
+    
+    keyvault:
+      soft_delete_required: true
+      purge_protection_required: false
+      network_restrictions_required: false
+      rbac_authorization_required: false
+      private_endpoints_required: false
+      logging_required: false
+    
+    resource_groups:
+      resource_locks_required: false
+      policy_compliance_required: false
+    
+    virtual_networks:
+      ddos_protection_required: false
+      nsg_required_on_subnets: false
+      private_ip_ranges_only: true
+    
+    tagging:
+      required_tags:
+        - environment
+        - owner
+        - project
+      cost_management_tags:
+        - project
+
+# Security Controls by Impact Level
+impact_levels:
+  critical:
+    impact_score: 1.0
+    controls:
+      - aks-rbac-enabled
+      - aks-network-policy-enabled
+      - aks-node-pool-encryption
+      - keyvault-soft-delete-enabled
+      - keyvault-purge-protection-enabled
+      - uami-exists-and-active
+      - resourcegroup-exists-and-active
+  
+  high:
+    impact_score: 0.8
+    controls:
+      - aks-cluster-monitoring
+      - aks-private-cluster
+      - keyvault-network-access-restrictions
+      - uami-role-assignments-principle-of-least-privilege
+      - resourcegroup-resource-locks
+      - vnet-exists-and-configured
+      - vnet-nsg-associations
+      - vnet-ddos-protection
+  
+  medium:
+    impact_score: 0.6
+    controls:
+      - aks-api-server-authorized-ip-ranges
+      - keyvault-logging-enabled
+      - resourcegroup-policy-compliance
+      - vnet-peering-security
+  
+  low:
+    impact_score: 0.5
+    controls:
+      - aks-cluster-tagging
+      - keyvault-required-tagging
+      - uami-required-tagging
+      - resourcegroup-required-tagging
+      - vnet-required-tagging
+      - vnet-address-space-best-practices
+      - vnet-service-endpoints-configured
+
+# Compliance Framework Requirements
+compliance_frameworks:
+  cis:
+    name: "CIS Azure Foundations Benchmark"
+    version: "1.5.0"
+    required_controls:
+      - aks-rbac-enabled
+      - aks-network-policy-enabled
+      - aks-api-server-authorized-ip-ranges
+      - keyvault-soft-delete-enabled
+      - keyvault-network-access-restrictions
+  
+  asb:
+    name: "Azure Security Benchmark"
+    version: "3.0"
+    required_controls:
+      - aks-rbac-enabled
+      - aks-monitoring
+      - keyvault-soft-delete-enabled
+      - keyvault-rbac-enabled
+      - uami-exists-and-active
+  
+  nist:
+    name: "NIST Cybersecurity Framework"
+    version: "1.1"
+    categories:
+      - identify
+      - protect
+      - detect
+      - respond
+      - recover

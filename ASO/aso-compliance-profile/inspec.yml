@@ -1,0 +1,81 @@
+name: aso-compliance-profile
+title: Azure Service Operator (ASO) Infrastructure Compliance Tests
+maintainer: DevOps Team
+copyright: Your Organization
+copyright_email: devops@yourorg.com
+license: Apache-2.0
+summary: Comprehensive compliance testing for ASO-provisioned Azure infrastructure
+version: 1.0.0
+inspec_version: '>= 5.0'
+
+platform:
+  name: azure
+  release: '*'
+
+depends:
+  - name: inspec-azure
+    git: https://github.com/inspec/inspec-azure.git
+    tag: v1.118.29
+
+inputs:
+  - name: resource_group_name
+    description: The Azure resource group name containing ASO resources
+    type: string
+    required: true
+    value: <%= ENV['AZURE_RESOURCE_GROUP'] || 'rg-aso-dev' %>
+
+  - name: aks_cluster_name
+    description: The AKS cluster name provisioned by ASO
+    type: string
+    required: true
+    value: <%= ENV['AKS_CLUSTER_NAME'] || 'aks-cluster' %>
+
+  - name: key_vault_name
+    description: The Key Vault name provisioned by ASO
+    type: string
+    required: true
+    value: <%= ENV['KEY_VAULT_NAME'] || 'kv-aso-dev' %>
+
+  - name: uami_name
+    description: The User Assigned Managed Identity name
+    type: string
+    required: true
+    value: <%= ENV['UAMI_NAME'] || 'uami-aso-workload' %>
+
+  - name: vnet_name
+    description: The Virtual Network name (if provisioned)
+    type: string
+    required: false
+    value: <%= ENV['VNET_NAME'] || 'vnet-aso' %>
+
+  - name: environment
+    description: The deployment environment (dev, staging, prod)
+    type: string
+    required: true
+    value: <%= ENV['ENVIRONMENT'] || 'dev' %>
+
+  - name: required_tags
+    description: List of required tags for all resources
+    type: array
+    required: true
+    value:
+      - 'environment'
+      - 'owner'
+      - 'cost-center'
+      - 'project'
+
+  - name: compliance_frameworks
+    description: Compliance frameworks to validate against
+    type: array
+    required: false
+    value:
+      - 'CIS'
+      - 'Azure Security Benchmark'
+      - 'NIST'
+
+supports:
+  - platform-name: azure
+
+gem_dependencies:
+  - name: azure-storage-blob
+    version: '~> 2.0'

@@ -1,0 +1,382 @@
+# GitLab CI/CD Pipeline for ASO Infrastructure Compliance Testing
+# This pipeline runs InSpec compliance tests against ASO-provisioned Azure resources
+
+stages:
+  - validate
+  - test
+  - report
+  - notify
+
+variables:
+  INSPEC_VERSION: "5.22.3"
+  AZURE_CLI_VERSION: "2.53.0"
+  PROFILE_PATH: "aso-compliance-profile"
+
+# Global before_script for Azure authentication
+.azure_auth: &azure_auth
+  before_script:
+    - echo "Authenticating with Azure using Service Principal"
+    - az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID
+    - az account set --subscription $AZURE_SUBSCRIPTION_ID
+    - echo "Current Azure subscription:"
+    - az account show --query "{subscriptionId:id, name:name, tenantId:tenantId}" -o table
+
+# Validate InSpec profile syntax and dependencies
+validate_profile:
+  stage: validate
+  image: chef/inspec:$INSPEC_VERSION
+  script:
+    - cd $PROFILE_PATH
+    - inspec check .
+    - echo "Profile validation completed successfully"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $PIPELINE_TYPE == "compliance"
+  tags:
+    - compliance
+
+# Development environment compliance tests
+compliance_test_dev:
+  stage: test
+  image: chef/inspec:$INSPEC_VERSION
+  <<: *azure_auth
+  script:
+    - cd $PROFILE_PATH
+    - |
+      inspec exec . \
+        -t azure:// \
+        --input resource_group_name="$DEV_RESOURCE_GROUP" \
+        --input aks_cluster_name="$DEV_AKS_CLUSTER_NAME" \
+        --input key_vault_name="$DEV_KEY_VAULT_NAME" \
+        --input uami_name="$DEV_UAMI_NAME" \
+        --input vnet_name="$DEV_VNET_NAME" \
+        --input environment="dev" \
+        --reporter cli json:reports/inspec_dev_report.json html:reports/inspec_dev_report.html junit2:reports/inspec_dev_junit.xml \
+        --chef-license=accept-silent \
+        || true  # Don't fail the job on test failures
+  artifacts:
+    reports:
+      junit: $PROFILE_PATH/reports/inspec_dev_junit.xml
+    paths:
+      - $PROFILE_PATH/reports/
+    expire_in: 30 days
+    when: always
+  rules:
+    - if: $ENVIRONMENT == "dev" && ($PIPELINE_TYPE == "provision" || $PIPELINE_TYPE == "compliance")
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH == "develop"
+      when: manual
+      allow_failure: true
+  tags:
+    - compliance
+    - dev
+  environment:
+    name: development
+
+# Staging environment compliance tests
+compliance_test_staging:
+  stage: test
+  image: chef/inspec:$INSPEC_VERSION
+  <<: *azure_auth
+  script:
+    - cd $PROFILE_PATH
+    - |
+      inspec exec . \
+        -t azure:// \
+        --input resource_group_name="$STAGING_RESOURCE_GROUP" \
+        --input aks_cluster_name="$STAGING_AKS_CLUSTER_NAME" \
+        --input key_vault_name="$STAGING_KEY_VAULT_NAME" \
+        --input uami_name="$STAGING_UAMI_NAME" \
+        --input vnet_name="$STAGING_VNET_NAME" \
+        --input environment="staging" \
+        --reporter cli json:reports/inspec_staging_report.json html:reports/inspec_staging_report.html junit2:reports/inspec_staging_junit.xml \
+        --chef-license=accept-silent \
+        || true
+  artifacts:
+    reports:
+      junit: $PROFILE_PATH/reports/inspec_staging_junit.xml
+    paths:
+      - $PROFILE_PATH/reports/
+    expire_in: 30 days
+    when: always
+  rules:
+    - if: $ENVIRONMENT == "staging" && ($PIPELINE_TYPE == "provision" || $PIPELINE_TYPE == "compliance")
+      when: manual
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "staging"
+      when: manual
+  tags:
+    - compliance
+    - staging
+  environment:
+    name: staging
+  needs: []
+
+# Production environment compliance tests
+compliance_test_prod:
+  stage: test
+  image: chef/inspec:$INSPEC_VERSION
+  <<: *azure_auth
+  script:
+    - cd $PROFILE_PATH
+    - |
+      inspec exec . \
+        -t azure:// \
+        --input resource_group_name="$PROD_RESOURCE_GROUP" \
+        --input aks_cluster_name="$PROD_AKS_CLUSTER_NAME" \
+        --input key_vault_name="$PROD_KEY_VAULT_NAME" \
+        --input uami_name="$PROD_UAMI_NAME" \
+        --input vnet_name="$PROD_VNET_NAME" \
+        --input environment="prod" \
+        --reporter cli json:reports/inspec_prod_report.json html:reports/inspec_prod_report.html junit2:reports/inspec_prod_junit.xml \
+        --chef-license=accept-silent
+    - echo "Production compliance test completed"
+    - |
+      # Check for critical failures
+      CRITICAL_FAILURES=$(jq '.profiles[].controls[] | select(.impact >= 0.8 and (.results[] | select(.status == "failed")))' $PROFILE_PATH/reports/inspec_prod_report.json | jq -s length)
+      if [ "$CRITICAL_FAILURES" -gt 0 ]; then
+        echo "❌ Found $CRITICAL_FAILURES critical compliance failures in production"
+        exit 1
+      else
+        echo "✅ No critical compliance failures found"
+      fi
+  artifacts:
+    reports:
+      junit: $PROFILE_PATH/reports/inspec_prod_junit.xml
+    paths:
+      - $PROFILE_PATH/reports/
+    expire_in: 90 days
+    when: always
+  rules:
+    - if: $ENVIRONMENT == "prod" && ($PIPELINE_TYPE == "provision" || $PIPELINE_TYPE == "compliance")
+      when: manual
+    - if: $CI_COMMIT_TAG && $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/
+      when: manual
+  tags:
+    - compliance
+    - prod
+  environment:
+    name: production
+  needs: []
+
+# Compliance report generation and analysis
+generate_compliance_report:
+  stage: report
+  image: ruby:3.1-slim
+  before_script:
+    - apt-get update && apt-get install -y jq curl
+    - gem install json
+  script:
+    - |
+      cd $PROFILE_PATH
+      
+      # Create comprehensive compliance report
+      cat > generate_report.rb << 'EOF'
+      require 'json'
+      require 'date'
+      
+      def generate_summary_report(report_files)
+        summary = {
+          'timestamp' => Time.now.iso8601,
+          'environments' => {},
+          'overall_summary' => {
+            'total_controls' => 0,
+            'passed_controls' => 0,
+            'failed_controls' => 0,
+            'skipped_controls' => 0
+          },
+          'compliance_by_framework' => {},
+          'critical_failures' => []
+        }
+        
+        report_files.each do |file|
+          next unless File.exist?(file)
+          
+          env_name = file.match(/inspec_([^_]+)_report\.json/)[1]
+          data = JSON.parse(File.read(file))
+          
+          env_summary = analyze_environment_report(data)
+          summary['environments'][env_name] = env_summary
+          
+          # Add to overall summary
+          summary['overall_summary']['total_controls'] += env_summary['total_controls']
+          summary['overall_summary']['passed_controls'] += env_summary['passed_controls']
+          summary['overall_summary']['failed_controls'] += env_summary['failed_controls']
+          summary['overall_summary']['skipped_controls'] += env_summary['skipped_controls']
+          
+          # Collect critical failures
+          env_summary['critical_failures'].each do |failure|
+            summary['critical_failures'] << failure.merge('environment' => env_name)
+          end
+        end
+        
+        # Calculate overall compliance percentage
+        total = summary['overall_summary']['total_controls']
+        passed = summary['overall_summary']['passed_controls']
+        summary['overall_summary']['compliance_percentage'] = total > 0 ? (passed.to_f / total * 100).round(2) : 0
+        
+        summary
+      end
+      
+      def analyze_environment_report(data)
+        controls = data['profiles'].flat_map { |p| p['controls'] }
+        
+        summary = {
+          'total_controls' => controls.length,
+          'passed_controls' => 0,
+          'failed_controls' => 0,
+          'skipped_controls' => 0,
+          'critical_failures' => []
+        }
+        
+        controls.each do |control|
+          if control['results'].any? { |r| r['status'] == 'failed' }
+            summary['failed_controls'] += 1
+            if control['impact'] >= 0.8
+              summary['critical_failures'] << {
+                'control_id' => control['id'],
+                'title' => control['title'],
+                'impact' => control['impact'],
+                'message' => control['results'].find { |r| r['status'] == 'failed' }['message']
+              }
+            end
+          elsif control['results'].any? { |r| r['status'] == 'passed' }
+            summary['passed_controls'] += 1
+          else
+            summary['skipped_controls'] += 1
+          end
+        end
+        
+        summary['compliance_percentage'] = summary['total_controls'] > 0 ? 
+          (summary['passed_controls'].to_f / summary['total_controls'] * 100).round(2) : 0
+        
+        summary
+      end
+      
+      # Generate report
+      report_files = Dir.glob('reports/inspec_*_report.json')
+      summary = generate_summary_report(report_files)
+      
+      File.write('reports/compliance_summary.json', JSON.pretty_generate(summary))
+      puts "Generated compliance summary report"
+      
+      # Print summary to console
+      puts "\n🔍 COMPLIANCE TEST SUMMARY"
+      puts "=" * 50
+      summary['environments'].each do |env, data|
+        status_icon = data['compliance_percentage'] >= 80 ? '✅' : '❌'
+        puts "#{status_icon} #{env.upcase}: #{data['compliance_percentage']}% compliant (#{data['passed_controls']}/#{data['total_controls']} controls)"
+      end
+      
+      if summary['critical_failures'].any?
+        puts "\n🚨 CRITICAL FAILURES:"
+        summary['critical_failures'].each do |failure|
+          puts "  - [#{failure['environment']}] #{failure['control_id']}: #{failure['title']}"
+        end
+      else
+        puts "\n✅ No critical failures found"
+      end
+      EOF
+      
+      ruby generate_report.rb
+  artifacts:
+    paths:
+      - $PROFILE_PATH/reports/
+    expire_in: 90 days
+  rules:
+    - if: $PIPELINE_TYPE == "compliance"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  needs:
+    - job: compliance_test_dev
+      optional: true
+    - job: compliance_test_staging
+      optional: true
+    - job: compliance_test_prod
+      optional: true
+  tags:
+    - compliance
+
+# Notify teams about compliance status
+notify_compliance_status:
+  stage: notify
+  image: curlimages/curl:8.4.0
+  script:
+    - |
+      if [ -f "$PROFILE_PATH/reports/compliance_summary.json" ]; then
+        COMPLIANCE_DATA=$(cat $PROFILE_PATH/reports/compliance_summary.json)
+        OVERALL_COMPLIANCE=$(echo $COMPLIANCE_DATA | jq -r '.overall_summary.compliance_percentage')
+        CRITICAL_FAILURES=$(echo $COMPLIANCE_DATA | jq -r '.critical_failures | length')
+        
+        # Determine notification color and message
+        if [ "$CRITICAL_FAILURES" -gt 0 ]; then
+          COLOR="danger"
+          STATUS_ICON="🚨"
+          MESSAGE="Critical compliance failures detected!"
+        elif [ "$(echo "$OVERALL_COMPLIANCE < 80" | bc -l)" -eq 1 ]; then
+          COLOR="warning"
+          STATUS_ICON="⚠️"
+          MESSAGE="Compliance below threshold (${OVERALL_COMPLIANCE}%)"
+        else
+          COLOR="good"
+          STATUS_ICON="✅"
+          MESSAGE="All compliance checks passed (${OVERALL_COMPLIANCE}%)"
+        fi
+        
+        # Send Slack notification (if webhook configured)
+        if [ -n "$SLACK_WEBHOOK_URL" ]; then
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"${STATUS_ICON} ASO Infrastructure Compliance Report\",\"attachments\":[{\"color\":\"${COLOR}\",\"text\":\"${MESSAGE}\n\nView detailed report: ${CI_PIPELINE_URL}\",\"fields\":[{\"title\":\"Pipeline\",\"value\":\"${CI_PIPELINE_URL}\",\"short\":true},{\"title\":\"Environment\",\"value\":\"${ENVIRONMENT:-'multiple'}\",\"short\":true}]}]}" \
+            $SLACK_WEBHOOK_URL
+        fi
+        
+        # Send Teams notification (if webhook configured)  
+        if [ -n "$TEAMS_WEBHOOK_URL" ]; then
+          curl -H "Content-Type: application/json" -d "{
+            \"@type\": \"MessageCard\",
+            \"@context\": \"http://schema.org/extensions\",
+            \"themeColor\": \"${COLOR}\",
+            \"summary\": \"ASO Compliance Report\",
+            \"sections\": [{
+              \"activityTitle\": \"${STATUS_ICON} ASO Infrastructure Compliance\",
+              \"activitySubtitle\": \"${MESSAGE}\",
+              \"facts\": [{
+                \"name\": \"Overall Compliance\",
+                \"value\": \"${OVERALL_COMPLIANCE}%\"
+              }, {
+                \"name\": \"Critical Failures\",
+                \"value\": \"${CRITICAL_FAILURES}\"
+              }, {
+                \"name\": \"Environment\", 
+                \"value\": \"${ENVIRONMENT:-'Multiple'}\"
+              }],
+              \"markdown\": true
+            }],
+            \"potentialAction\": [{
+              \"@type\": \"OpenUri\",
+              \"name\": \"View Pipeline\",
+              \"targets\": [{\"os\": \"default\", \"uri\": \"${CI_PIPELINE_URL}\"}]
+            }]
+          }" $TEAMS_WEBHOOK_URL
+        fi
+        
+        echo "Compliance notifications sent"
+      else
+        echo "No compliance report found to notify about"
+      fi
+  rules:
+    - if: $PIPELINE_TYPE == "compliance"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  needs:
+    - job: generate_compliance_report
+  tags:
+    - compliance
+  allow_failure: true
+
+# Scheduled compliance check (daily for production)
+scheduled_compliance_check:
+  extends: .compliance_test_prod
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "compliance"
+  variables:
+    ENVIRONMENT: "prod"

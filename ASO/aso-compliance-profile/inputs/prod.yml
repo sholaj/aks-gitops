@@ -1,0 +1,22 @@
+# Production Environment Input Configuration
+# Configure these values for your production environment
+
+resource_group_name: "rg-aso-prod"
+aks_cluster_name: "aks-prod-cluster"
+key_vault_name: "kv-aso-prod-001"
+uami_name: "uami-aso-workload-prod"
+vnet_name: "vnet-aso-prod"
+environment: "prod"
+
+required_tags:
+  - "environment"
+  - "owner"
+  - "cost-center"
+  - "project"
+  - "backup-policy"
+  - "compliance-framework"
+
+compliance_frameworks:
+  - "CIS"
+  - "Azure Security Benchmark"
+  - "NIST"
