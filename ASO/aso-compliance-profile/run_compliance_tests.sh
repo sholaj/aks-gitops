@@ -120,6 +120,14 @@ CURRENT_SUBSCRIPTION=$(az account show --query "name" -o tsv)
 echo -e "${GREEN}✅ Authenticated with Azure${NC}"
 echo -e "Current subscription: ${YELLOW}$CURRENT_SUBSCRIPTION${NC}"
 
+# Install InSpec dependencies
+echo -e "${BLUE}📦 Installing InSpec dependencies...${NC}"
+if ! inspec vendor . > /dev/null 2>&1; then
+    echo -e "${RED}Error: Failed to install InSpec dependencies.${NC}"
+    echo "Run 'inspec vendor .' for details."
+    exit 1
+fi
+
 # Check if InSpec profile is valid
 echo -e "${BLUE}🔍 Validating InSpec profile...${NC}"
 if ! inspec check . > /dev/null 2>&1; then

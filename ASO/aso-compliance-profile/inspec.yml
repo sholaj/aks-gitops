@@ -14,8 +14,7 @@ platform:
 
 depends:
   - name: inspec-azure
-    git: https://github.com/inspec/inspec-azure.git
-    tag: v1.118.29
+    url: https://github.com/inspec/inspec-azure/archive/v1.118.29.tar.gz
 
 inputs:
   - name: resource_group_name
