@@ -105,13 +105,32 @@ control 'security-06' do
   tag 'exceptions'
   tag 'nist-csf: PR.AC-1'
   
-  only_if { !pod_identity_exceptions.empty? }
+  # Default pod identity exceptions for system namespaces
+  required_exceptions = ['kube-system', 'aks-system']
+  all_exceptions = (pod_identity_exceptions + required_exceptions).uniq
   
   describe command("az aks show --resource-group #{resource_group} --name #{cluster_name} --query 'podIdentityProfile.userAssignedIdentityExceptions' -o json") do
     its('exit_status') { should eq 0 }
     
-    pod_identity_exceptions.each do |namespace|
+    all_exceptions.each do |namespace|
       its('stdout') { should match(/#{Regexp.escape(namespace)}/) }
     end
+  end
+end
+
+control 'security-07' do
+  impact 0.8
+  title 'Azure Policy addon should be enabled'
+  desc 'Verify that Azure Policy addon is enabled for governance and compliance'
+  
+  tag 'security'
+  tag 'policy'
+  tag 'governance'
+  tag 'compliance'
+  tag 'nist-csf: PR.IP-1'
+  
+  describe command("az aks show --resource-group #{resource_group} --name #{cluster_name} --query 'addonProfiles.azurepolicy.enabled' -o tsv") do
+    its('exit_status') { should eq 0 }
+    its('stdout.strip') { should eq 'true' }
   end
 end

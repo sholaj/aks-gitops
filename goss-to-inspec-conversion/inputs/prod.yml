@@ -27,7 +27,7 @@ istio_version: "1.20.2"
 
 # Auto-upgrade
 node_os_upgrade_channel: "NodeImage"
-upgrade_channel: "stable"
+upgrade_channel: "patch"
 
 # GitOps Resources
 gitrepository_name: "flux-system"
@@ -50,10 +50,17 @@ logging_scripts_configmap_name: "fluent-bit-scripts"
 federated_credential_count: "2"
 pod_identity_exceptions: 
   - "kube-system"
-  - "default"
+  - "aks-system"
   - "monitoring"
 
+# Environment
+environment: "prod"
+
 # Optional validations (set to true to enable)
-check_http_routing: true
+check_http_routing: false
 validate_arm_parameters: true
 validate_variable_files: true
+
+# File paths (only used if validation is enabled)
+arm_template_file: "/path/to/arm/template.json"
+variable_file: "/path/to/variables.yml"

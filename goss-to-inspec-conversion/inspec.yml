@@ -99,7 +99,7 @@ inputs:
   - name: upgrade_channel
     description: Expected AKS upgrade channel
     type: string
-    value: stable
+    value: patch
 
   - name: gitrepository_name
     description: Name of the GitRepository resource
@@ -155,6 +155,31 @@ inputs:
     description: List of namespaces for pod identity exceptions
     type: array
     value: []
+
+  - name: environment
+    description: Deployment environment (dev, staging, prod)
+    type: string
+    value: dev
+
+  - name: arm_template_file
+    description: Path to ARM template file for validation
+    type: string
+    required: false
+
+  - name: variable_file
+    description: Path to variable file for validation
+    type: string
+    required: false
+
+  - name: validate_arm_parameters
+    description: Enable ARM parameter validation
+    type: boolean
+    value: false
+
+  - name: validate_variable_files
+    description: Enable variable file validation
+    type: boolean
+    value: false
 
 tags:
   - azure
