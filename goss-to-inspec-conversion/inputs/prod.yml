@@ -1,0 +1,59 @@
+# Production Environment Input Values
+# Replace these placeholder values with your actual environment-specific values
+
+resource_group: "rg-aks-prod-eastus"
+cluster_name: "aks-cluster-prod"
+kubernetes_version: "1.29.2"
+dns_prefix: "aks-prod"
+
+# Namespaces
+flux_namespace: "flux-system"
+cert_manager_namespace: "cert-manager"
+external_dns_namespace: "external-dns"
+informer_namespace: "informer"
+logging_namespace: "logging"
+
+# User Assigned Managed Identities
+uami_resource_group: "rg-identity-prod-eastus"
+cert_mgr_managed_identity: "uami-certmanager-prod"
+extdns_managed_identity: "uami-externaldns-prod"
+extsecret_managed_identity: "uami-externalsecrets-prod"
+
+# Monitoring
+log_analytics_workspace_id: "/subscriptions/your-subscription-id/resourceGroups/rg-monitoring-prod/providers/Microsoft.OperationalInsights/workspaces/log-analytics-prod"
+
+# Service Mesh
+istio_version: "1.20.2"
+
+# Auto-upgrade
+node_os_upgrade_channel: "NodeImage"
+upgrade_channel: "stable"
+
+# GitOps Resources
+gitrepository_name: "flux-system"
+kustomization_name: "flux-system"
+
+# Cert-manager
+cluster_issuer_name: "letsencrypt-prod"
+
+# External Secrets
+external_secret_name: "vault-secret"
+secret_store_name: "vault-backend"
+
+# Logging
+logging_daemonset_name: "fluent-bit"
+logging_crd_name: "outputs.logging.coreos.com"
+logging_configmap_name: "fluent-bit-config"
+logging_scripts_configmap_name: "fluent-bit-scripts"
+
+# Identity Configuration
+federated_credential_count: "2"
+pod_identity_exceptions: 
+  - "kube-system"
+  - "default"
+  - "monitoring"
+
+# Optional validations (set to true to enable)
+check_http_routing: true
+validate_arm_parameters: true
+validate_variable_files: true

@@ -84,9 +84,7 @@ control 'aks-cluster-tagging' do
 
   required_tags = input('required_tags')
   
-  describe azurerm_resource(resource_group: input('resource_group_name'), 
-                           name: input('aks_cluster_name'), 
-                           type: 'Microsoft.ContainerService/managedClusters') do
+  describe azurerm_kubernetes_cluster(resource_group: input('resource_group_name'), name: input('aks_cluster_name')) do
     it { should exist }
     required_tags.each do |tag|
       its('tags') { should include(tag) }

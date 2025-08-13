@@ -120,19 +120,22 @@ CURRENT_SUBSCRIPTION=$(az account show --query "name" -o tsv)
 echo -e "${GREEN}✅ Authenticated with Azure${NC}"
 echo -e "Current subscription: ${YELLOW}$CURRENT_SUBSCRIPTION${NC}"
 
-# Install InSpec dependencies
+# Install InSpec dependencies with force overwrite
 echo -e "${BLUE}📦 Installing InSpec dependencies...${NC}"
-if ! inspec vendor . > /dev/null 2>&1; then
+if ! inspec vendor --overwrite . > /dev/null 2>&1; then
     echo -e "${RED}Error: Failed to install InSpec dependencies.${NC}"
-    echo "Run 'inspec vendor .' for details."
+    echo "Running with verbose output for troubleshooting:"
+    inspec vendor --overwrite .
     exit 1
 fi
+echo -e "${GREEN}✅ Dependencies installed successfully${NC}"
 
 # Check if InSpec profile is valid
 echo -e "${BLUE}🔍 Validating InSpec profile...${NC}"
 if ! inspec check . > /dev/null 2>&1; then
     echo -e "${RED}Error: InSpec profile validation failed.${NC}"
-    echo "Run 'inspec check .' for details."
+    echo "Running check with verbose output for troubleshooting:"
+    inspec check .
     exit 1
 fi
 echo -e "${GREEN}✅ InSpec profile is valid${NC}"

@@ -1,0 +1,167 @@
+name: aks-compliance-tests
+title: AKS Compliance and Configuration Tests
+maintainer: DevOps Team
+copyright: Your Organization
+copyright_email: devops@yourorg.com
+license: Apache-2.0
+summary: Production-grade InSpec profile for Azure Kubernetes Service (AKS) compliance and configuration validation
+version: 1.0.0
+inspec_version: '>= 5.0'
+
+supports:
+  - platform-name: azure
+
+depends:
+  - name: inspec-azure
+    git: https://github.com/inspec/inspec-azure.git
+
+inputs:
+  - name: resource_group
+    description: Azure Resource Group containing the AKS cluster
+    type: string
+    required: true
+
+  - name: cluster_name
+    description: Name of the AKS cluster
+    type: string
+    required: true
+
+  - name: kubernetes_version
+    description: Expected Kubernetes version
+    type: string
+    required: true
+
+  - name: dns_prefix
+    description: Expected DNS prefix for the cluster
+    type: string
+    required: true
+
+  - name: flux_namespace
+    description: Namespace where Flux controllers are deployed
+    type: string
+    value: flux-system
+
+  - name: cert_manager_namespace
+    description: Namespace where cert-manager is deployed
+    type: string
+    value: cert-manager
+
+  - name: external_dns_namespace
+    description: Namespace where external-dns is deployed
+    type: string
+    value: external-dns
+
+  - name: informer_namespace
+    description: Namespace where informer is deployed
+    type: string
+    value: informer
+
+  - name: logging_namespace
+    description: Namespace where logging components are deployed
+    type: string
+    value: logging
+
+  - name: uami_resource_group
+    description: Resource group containing User Assigned Managed Identities
+    type: string
+    required: true
+
+  - name: cert_mgr_managed_identity
+    description: Name of the cert-manager managed identity
+    type: string
+    required: true
+
+  - name: extdns_managed_identity
+    description: Name of the external-dns managed identity
+    type: string
+    required: true
+
+  - name: extsecret_managed_identity
+    description: Name of the external-secrets managed identity
+    type: string
+    required: true
+
+  - name: log_analytics_workspace_id
+    description: Log Analytics Workspace ID for monitoring
+    type: string
+    required: true
+
+  - name: istio_version
+    description: Expected Istio version
+    type: string
+    required: true
+
+  - name: node_os_upgrade_channel
+    description: Expected node OS upgrade channel
+    type: string
+    value: NodeImage
+
+  - name: upgrade_channel
+    description: Expected AKS upgrade channel
+    type: string
+    value: stable
+
+  - name: gitrepository_name
+    description: Name of the GitRepository resource
+    type: string
+    required: true
+
+  - name: kustomization_name
+    description: Name of the Kustomization resource
+    type: string
+    required: true
+
+  - name: cluster_issuer_name
+    description: Name of the cluster issuer
+    type: string
+    required: true
+
+  - name: external_secret_name
+    description: Name of the external secret
+    type: string
+    required: true
+
+  - name: secret_store_name
+    description: Name of the secret store
+    type: string
+    required: true
+
+  - name: logging_daemonset_name
+    description: Name of the logging daemonset
+    type: string
+    required: true
+
+  - name: logging_crd_name
+    description: Name of the logging CRD
+    type: string
+    required: true
+
+  - name: logging_configmap_name
+    description: Name of the logging configmap
+    type: string
+    required: true
+
+  - name: logging_scripts_configmap_name
+    description: Name of the logging scripts configmap
+    type: string
+    required: true
+
+  - name: federated_credential_count
+    description: Expected number of federated credentials per managed identity
+    type: string
+    value: "1"
+
+  - name: pod_identity_exceptions
+    description: List of namespaces for pod identity exceptions
+    type: array
+    value: []
+
+tags:
+  - azure
+  - kubernetes
+  - aks
+  - compliance
+  - security
+  - devops
+  - gitops
+  - monitoring
