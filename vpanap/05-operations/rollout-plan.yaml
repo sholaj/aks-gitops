@@ -1,0 +1,297 @@
+# VPA-NAP Integration Rollout Plan
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpa-rollout-plan
+  namespace: platform-system
+data:
+  rollout-phases.yaml: |
+    phases:
+      
+      # Phase 0: Pre-requisite Setup (Week 1)
+      phase0:
+        name: "Infrastructure Preparation"
+        duration: "1 week"
+        criteria:
+          entry:
+            - NAP successfully deployed in dev/staging
+            - Monitoring baseline established (30-day history)
+            - Custom metrics collection active
+            - VPA-NAP coordinator controller deployed
+            - Circuit breaker mechanisms tested
+          exit:
+            - All monitoring alerts functional
+            - Baseline metrics stable for 7 days
+            - No NAP-related incidents
+            - Emergency rollback procedure verified
+        actions:
+          - Deploy VPA-NAP coordinator to all clusters
+          - Implement monitoring dashboards
+          - Configure circuit breakers (inactive)
+          - Train operations team on new tooling
+        goNoGo:
+          go:
+            - Zero critical incidents with NAP in 7 days
+            - Monitoring coverage > 95%
+            - Coordinator health checks passing
+          noGo:
+            - NAP causing production issues
+            - Monitoring gaps identified
+            - Coordinator failures
+      
+      # Phase 1: Observation Mode (Week 2-3)
+      phase1:
+        name: "VPA Observation Only"
+        duration: "2 weeks"
+        scope: "Dev tenants only"
+        criteria:
+          entry:
+            - Phase 0 completed successfully
+            - VPA installed cluster-wide
+            - All VPAs configured with updateMode: "Off"
+            - Recommendation collection active
+          exit:
+            - 14 days of clean recommendation data
+            - No false conflict alerts
+            - Tenant workload patterns identified
+        configuration:
+          vpaSettings:
+            updateMode: "Off"
+            resourcePolicy:
+              controlledValues: "RequestsOnly"
+            targetNamespaces: 
+              - "tenant-dev-*"
+        monitoring:
+          requiredMetrics:
+            - vpa_recommendation_diff_percent
+            - resource_oscillation_index
+            - baseline_resource_usage
+          alertsEnabled: ["info", "warning"]
+          criticalAlertsEnabled: false
+        goNoGo:
+          go:
+            - Recommendations stable for 10+ days
+            - < 3 false positive alerts
+            - Clear workload patterns identified
+            - Team comfort with tooling
+          noGo:
+            - Recommendation volatility > 30%
+            - Monitoring system issues
+            - Team not ready for next phase
+      
+      # Phase 2: Limited Auto Mode (Week 4-6)
+      phase2:
+        name: "Controlled VPA Automation"
+        duration: "3 weeks"
+        scope: "Dev tenants + select standard tenants"
+        criteria:
+          entry:
+            - Phase 1 completed successfully
+            - Circuit breakers configured and active
+            - Rate limiting implemented
+            - Tenant opt-in process complete
+          exit:
+            - Zero conflict incidents
+            - Performance improvements measured
+            - Cost impact within 10% budget variance
+        configuration:
+          vpaSettings:
+            updateMode: "Initial"  # Start conservatively
+            rateLimits:
+              perNamespace: 5
+              clusterWide: 50
+            resourceConstraints:
+              maxIncrease: 25%
+              minDecrease: 10%
+          tenantScope:
+            dev: "all"
+            standard: "opt-in only"
+            premium: "none"
+        monitoring:
+          slaTargets:
+            availability: 99.9%
+            conflictIncidents: 0
+            costVariance: < 10%
+          alertsEnabled: "all"
+        goNoGo:
+          go:
+            - Zero conflict incidents
+            - SLA targets met
+            - Positive performance metrics
+            - No tenant complaints
+          noGo:
+            - Any conflict incident
+            - SLA violations
+            - > 10% cost increase
+            - Tenant experience degradation
+      
+      # Phase 3: Full Auto Mode (Week 7-10)
+      phase3:
+        name: "Production VPA Deployment"
+        duration: "4 weeks"
+        scope: "Standard and Premium tenants"
+        criteria:
+          entry:
+            - Phase 2 completed with 100% success rate
+            - Operations team certified
+            - Runbook procedures validated
+            - Customer communication complete
+          exit:
+            - 30 days stable operation
+            - Measurable cost/performance benefits
+            - Customer satisfaction maintained
+        configuration:
+          vpaSettings:
+            updateMode: "Auto"
+            advancedFeatures:
+              - Pod disruption budgets
+              - Graceful evictions
+              - Multi-container optimization
+          tenantRollout:
+            standard: "gradual (20% per week)"
+            premium: "manual approval required"
+        monitoring:
+          slaTargets:
+            availability: 99.95%
+            mttr: < 15 minutes
+            customerSatisfaction: > 95%
+        goNoGo:
+          go:
+            - All SLA targets exceeded
+            - ROI demonstration complete
+            - Zero customer escalations
+          noGo:
+            - Any SLA miss
+            - Customer complaints
+            - Unclear ROI
+      
+      # Phase 4: Optimization & Scaling (Week 11+)
+      phase4:
+        name: "Platform Optimization"
+        duration: "Ongoing"
+        scope: "All tenants"
+        focus:
+          - Advanced VPA features
+          - Custom recommendation policies
+          - ML-based optimization
+          - Multi-cluster deployment
+  
+  # Emergency Rollback Procedures
+  emergency-procedures.yaml: |
+    emergencyRollback:
+      
+      # Level 1: Circuit Breaker Activation (Immediate)
+      level1:
+        trigger: "Any critical conflict detected"
+        action: "Activate circuit breaker"
+        timeline: "< 30 seconds automatic"
+        impact: "VPA updates paused, NAP continues"
+        recovery: "Manual investigation required"
+      
+      # Level 2: VPA Mode Downgrade (< 5 minutes)
+      level2:
+        trigger: "Multiple conflicts or SLA violation"
+        action: "Change VPA updateMode to 'Initial'"
+        timeline: "< 5 minutes"
+        impact: "No automatic resource adjustments"
+        recovery: "Staged re-enablement after resolution"
+      
+      # Level 3: VPA Disable (< 10 minutes)
+      level3:
+        trigger: "Critical system instability"
+        action: "Set all VPAs to updateMode: 'Off'"
+        timeline: "< 10 minutes"
+        impact: "Return to pre-VPA state"
+        recovery: "Full rollout process restart"
+      
+      # Level 4: Complete Rollback (< 30 minutes)
+      level4:
+        trigger: "Cluster-wide impact"
+        action: "Remove all VPA resources"
+        timeline: "< 30 minutes"
+        impact: "Complete VPA removal"
+        recovery: "Requires post-mortem and redesign"
+    
+    rollbackCommands:
+      level1: |
+        kubectl patch configmap vpa-rate-limiter-config -n kube-system \
+        --type merge -p '{"data":{"circuitBreakerActive":"true"}}'
+      
+      level2: |
+        kubectl get vpa -A -o name | xargs -I {} \
+        kubectl patch {} --type merge -p '{"spec":{"updatePolicy":{"updateMode":"Initial"}}}'
+      
+      level3: |
+        kubectl get vpa -A -o name | xargs -I {} \
+        kubectl patch {} --type merge -p '{"spec":{"updatePolicy":{"updateMode":"Off"}}}'
+      
+      level4: |
+        kubectl delete vpa --all --all-namespaces
+        kubectl delete deployment vpa-admission-controller -n kube-system
+        kubectl delete deployment vpa-recommender -n kube-system
+        kubectl delete deployment vpa-updater -n kube-system
+  
+  success-criteria.yaml: |
+    overallSuccessCriteria:
+      
+      # Technical Success Metrics
+      technical:
+        stability:
+          - Zero conflict-related incidents
+          - < 0.1% additional eviction rate
+          - Node churn rate < 10% increase
+        performance:
+          - 15-25% improvement in resource utilization
+          - < 5% performance degradation during updates
+          - Response time impact < 50ms p95
+        cost:
+          - 10-20% reduction in compute costs
+          - ROI positive within 90 days
+          - No budget overruns during rollout
+      
+      # Operational Success Metrics  
+      operational:
+        reliability:
+          - 99.95% uptime maintained
+          - MTTR < 15 minutes for VPA-related issues
+          - < 2 alerts per day average
+        team:
+          - Operations team certified on new tools
+          - Runbooks complete and tested
+          - On-call response time < 5 minutes
+      
+      # Business Success Metrics
+      business:
+        tenantSatisfaction:
+          - No customer complaints about performance
+          - < 1% support ticket increase
+          - Premium tenant SLA compliance maintained
+        platform:
+          - Multi-tenant isolation preserved
+          - Scalability roadmap accelerated
+          - Competitive advantage demonstrated
+    
+    # Quantified Go/No-Go Thresholds
+    quantifiedThresholds:
+      phase1:
+        recommendation_volatility: < 30%
+        false_positive_rate: < 5%
+        data_completeness: > 95%
+      
+      phase2:
+        conflict_incidents: 0
+        availability_sla: > 99.9%
+        cost_variance: < 10%
+        eviction_rate_increase: < 20%
+      
+      phase3:
+        customer_satisfaction: > 95%
+        cost_reduction: > 10%
+        performance_improvement: > 15%
+        incident_rate: < 0.1%
+      
+      overallSuccess:
+        roi_timeframe: < 90 days
+        tenant_churn: < 2%
+        platform_stability: > 99.95%
+        team_satisfaction: > 90%

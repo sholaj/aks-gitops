@@ -1,0 +1,547 @@
+# Enhanced Monitoring and Alerting for VPA-NAP Integration
+
+---
+# ServiceMonitor for Coordinator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vpa-nap-coordinator
+  namespace: platform
+  labels:
+    app: vpa-nap-coordinator
+    monitoring: enabled
+spec:
+  selector:
+    matchLabels:
+      app: vpa-nap-coordinator
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+    - platform
+
+---
+# Baseline Monitoring Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpa-monitoring-baseline
+  namespace: platform
+data:
+  baseline-config.yaml: |
+    # Baseline thresholds for VPA-NAP monitoring
+    baselines:
+      coordinator:
+        cpu:
+          normal: 200     # 200m baseline
+          warning: 400    # 400m triggers warning
+          critical: 800   # 800m triggers critical
+        memory:
+          normal: 128     # 128Mi baseline
+          warning: 256    # 256Mi triggers warning  
+          critical: 512   # 512Mi triggers critical
+        response_time:
+          normal: 100     # 100ms baseline
+          warning: 500    # 500ms triggers warning
+          critical: 2000  # 2000ms triggers critical
+      
+      conflicts:
+        rate:
+          normal: 0       # No conflicts expected
+          warning: 3      # 3 conflicts/hour triggers warning
+          critical: 10    # 10 conflicts/hour triggers critical
+        
+      circuit_breaker:
+        triggers_per_hour:
+          normal: 0       # No triggers expected
+          warning: 1      # 1 trigger/hour triggers warning
+          critical: 3     # 3 triggers/hour triggers critical
+      
+      vpa_performance:
+        recommendation_latency:
+          normal: 300     # 5 minutes baseline
+          warning: 900    # 15 minutes triggers warning
+          critical: 1800  # 30 minutes triggers critical
+        
+        drift_percentage:
+          normal: 10      # 10% drift is normal
+          warning: 30     # 30% drift triggers warning
+          critical: 100   # 100% drift triggers critical
+
+  tuning-parameters.yaml: |
+    # Alert tuning parameters
+    tuning:
+      global:
+        evaluation_interval: 15s
+        scrape_interval: 30s
+        
+      tenant_specific:
+        dev:
+          sensitivity: low
+          alert_threshold_multiplier: 2.0
+          notification_channels: ["slack-dev"]
+        
+        standard:
+          sensitivity: medium
+          alert_threshold_multiplier: 1.0
+          notification_channels: ["slack-ops", "email-ops"]
+        
+        premium:
+          sensitivity: high
+          alert_threshold_multiplier: 0.5
+          notification_channels: ["slack-critical", "email-critical", "pager"]
+      
+      suppression:
+        maintenance_windows:
+          - schedule: "0 2-4 * * *"  # 2-4 AM daily
+            suppress: ["VPAPerformanceWarning"]
+          - schedule: "0 0 * * 0"    # Sunday midnight
+            suppress: ["VPABackupAlert"]
+
+---
+# Enhanced PrometheusRule
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vpa-nap-enhanced-alerts
+  namespace: platform
+  labels:
+    app: vpa-nap-coordinator
+    prometheus: kube-prometheus
+spec:
+  groups:
+  
+  # Critical System Alerts
+  - name: vpa-nap-critical
+    interval: 15s
+    rules:
+    
+    - alert: VPANAPCoordinatorDown
+      expr: up{job="vpa-nap-coordinator"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        component: coordinator
+        tenant_impact: all
+      annotations:
+        summary: "VPA-NAP coordinator is down"
+        description: "The VPA-NAP coordinator has been down for more than 1 minute. All VPA-NAP coordination is disabled."
+        runbook_url: "https://runbooks.company.com/vpa-nap/coordinator-down"
+        dashboard_url: "https://grafana.company.com/d/vpa-nap-overview"
+    
+    - alert: VPANAPConflictStorm
+      expr: rate(vpa_nap_conflicts_total[5m]) > 0.5
+      for: 2m
+      labels:
+        severity: critical
+        component: coordination
+        tenant_impact: multiple
+      annotations:
+        summary: "High rate of VPA-NAP conflicts detected"
+        description: "Conflict rate of {{ $value }} conflicts/minute detected. Circuit breaker should engage."
+        
+    - alert: CircuitBreakerStuck
+      expr: |
+        vpa_nap_circuit_breaker_active{} == 1 
+        and 
+        time() - vpa_nap_circuit_breaker_triggered_timestamp{} > 3600
+      for: 5m
+      labels:
+        severity: critical
+        component: circuit-breaker
+      annotations:
+        summary: "Circuit breaker has been active for over 1 hour"
+        description: "Circuit breaker triggered at {{ $labels.triggered_time }} and still active"
+
+  # Performance and Health Alerts  
+  - name: vpa-nap-performance
+    interval: 30s
+    rules:
+    
+    - alert: CoordinatorHighCPU
+      expr: |
+        rate(container_cpu_usage_seconds_total{pod=~"vpa-nap-coordinator.*"}[5m]) * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+        component: coordinator
+      annotations:
+        summary: "VPA-NAP coordinator high CPU usage"
+        description: "Coordinator CPU usage: {{ $value }}%"
+        
+    - alert: CoordinatorHighMemory  
+      expr: |
+        container_memory_usage_bytes{pod=~"vpa-nap-coordinator.*"} / container_spec_memory_limit_bytes{pod=~"vpa-nap-coordinator.*"} * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+        component: coordinator
+      annotations:
+        summary: "VPA-NAP coordinator high memory usage"
+        description: "Coordinator memory usage: {{ $value }}%"
+        
+    - alert: VPARecommendationLatencyHigh
+      expr: |
+        histogram_quantile(0.95, rate(vpa_recommendation_generation_duration_seconds_bucket[5m])) > 900
+      for: 10m
+      labels:
+        severity: warning
+        component: vpa
+      annotations:
+        summary: "VPA recommendation generation is slow"
+        description: "95th percentile latency: {{ $value }}s"
+
+  # Tenant-Specific Alerts
+  - name: vpa-nap-tenant-impact
+    interval: 30s
+    rules:
+    
+    - alert: TenantVPAOscillating
+      expr: |
+        stddev_over_time(
+          vpa_recommendation{resource="memory"}[30m]
+        ) / avg_over_time(
+          vpa_recommendation{resource="memory"}[30m]
+        ) > 0.5
+      for: 15m  
+      labels:
+        severity: warning
+        component: vpa
+        tenant: "{{ $labels.namespace }}"
+      annotations:
+        summary: "VPA recommendations oscillating for tenant {{ $labels.namespace }}"
+        description: "Memory recommendations showing high variance (CV: {{ $value }})"
+        
+    - alert: TenantResourceQuotaNearLimit
+      expr: |
+        (
+          kube_resourcequota_usage{resource="requests.memory"} / 
+          kube_resourcequota_hard{resource="requests.memory"}
+        ) > 0.85
+        and
+        increase(vpa_recommendation{resource="memory"}[1h]) > 0
+      for: 5m
+      labels:
+        severity: warning
+        component: tenant
+        tenant: "{{ $labels.namespace }}"
+      annotations:
+        summary: "Tenant {{ $labels.namespace }} approaching memory quota limit"
+        description: "Quota utilization: {{ $value | humanizePercentage }} with increasing VPA recommendations"
+
+  # Operational Alerts
+  - name: vpa-nap-operations
+    interval: 60s
+    rules:
+    
+    - alert: VPABackupFailed
+      expr: |
+        time() - vpa_backup_last_success_timestamp > 86400
+      for: 5m
+      labels:
+        severity: warning
+        component: backup
+      annotations:
+        summary: "VPA backup has not succeeded in 24 hours"
+        description: "Last successful backup: {{ $value | humanizeTimestamp }}"
+        
+    - alert: CoordinationResourcesGrowth
+      expr: |
+        increase(
+          prometheus_tsdb_symbol_table_size_bytes{job="prometheus"}[24h]
+        ) > 100000000  # 100MB growth
+      for: 5m
+      labels:
+        severity: warning
+        component: metrics
+      annotations:
+        summary: "Prometheus storage growing rapidly"
+        description: "Metrics storage increased by {{ $value | humanizeBytes }} in 24h"
+
+---
+# Custom Recording Rules
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vpa-nap-recording-rules
+  namespace: platform
+spec:
+  groups:
+  - name: vpa-nap-metrics
+    interval: 30s
+    rules:
+    
+    # Composite conflict score (0-10 scale)
+    - record: vpa_nap:conflict_score
+      expr: |
+        clamp_max(
+          (
+            rate(vpa_updater_evictions_total[5m]) * 5 +
+            rate(cluster_autoscaler_nodes_added_total[5m]) * 3 +
+            rate(cluster_autoscaler_nodes_deleted_total[5m]) * 2
+          ),
+          10
+        )
+        
+    # Node efficiency with VPA
+    - record: vpa_nap:node_efficiency
+      expr: |
+        (
+          sum(kube_node_status_allocatable{resource="cpu"}) - 
+          sum(kube_pod_container_resource_requests{resource="cpu"})
+        ) / sum(kube_node_status_allocatable{resource="cpu"})
+        
+    # VPA recommendation accuracy
+    - record: vpa_nap:recommendation_accuracy
+      expr: |
+        1 - abs(
+          (
+            avg(container_memory_working_set_bytes{container!=""}) - 
+            avg(vpa_recommendation{resource="memory"})
+          ) / avg(vpa_recommendation{resource="memory"})
+        )
+        
+    # Tenant resource utilization efficiency
+    - record: vpa_nap:tenant_efficiency
+      expr: |
+        avg by (namespace) (
+          container_memory_working_set_bytes{container!=""} /
+          kube_pod_container_resource_requests{resource="memory"}
+        )
+
+---
+# Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpa-nap-dashboard
+  namespace: platform
+  labels:
+    grafana_dashboard: "true"
+data:
+  vpa-nap-overview.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "VPA-NAP Integration Overview",
+        "tags": ["vpa", "nap", "coordination"],
+        "timezone": "browser",
+        "refresh": "30s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "System Health Overview",
+            "type": "stat",
+            "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+            "targets": [
+              {
+                "expr": "up{job=\"vpa-nap-coordinator\"}",
+                "legendFormat": "Coordinator Status"
+              },
+              {
+                "expr": "vpa_nap:conflict_score",
+                "legendFormat": "Conflict Score"
+              },
+              {
+                "expr": "vpa_nap_circuit_breaker_active",
+                "legendFormat": "Circuit Breaker"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {"color": "green", "value": null},
+                    {"color": "yellow", "value": 0.5},
+                    {"color": "red", "value": 1}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 2,
+            "title": "Conflict Detection",
+            "type": "timeseries", 
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+            "targets": [
+              {
+                "expr": "vpa_nap:conflict_score",
+                "legendFormat": "Conflict Score"
+              },
+              {
+                "expr": "rate(vpa_nap_conflicts_total[5m])",
+                "legendFormat": "Conflict Rate"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Resource Efficiency",
+            "type": "timeseries",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}, 
+            "targets": [
+              {
+                "expr": "vpa_nap:node_efficiency",
+                "legendFormat": "Node Efficiency"
+              },
+              {
+                "expr": "vpa_nap:recommendation_accuracy",
+                "legendFormat": "VPA Accuracy"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Tenant Impact Heatmap",
+            "type": "heatmap",
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+            "targets": [
+              {
+                "expr": "vpa_nap:tenant_efficiency",
+                "legendFormat": "{{namespace}}"
+              }
+            ]
+          }
+        ],
+        "templating": {
+          "list": [
+            {
+              "name": "tenant_tier",
+              "type": "query",
+              "query": "label_values(kube_namespace_labels, label_tenant_tier)",
+              "multi": true,
+              "includeAll": true
+            }
+          ]
+        },
+        "annotations": {
+          "list": [
+            {
+              "name": "Circuit Breaker Events",
+              "datasource": "Prometheus",
+              "expr": "ALERTS{alertname=\"VPANAPCircuitBreakerTriggered\"}",
+              "titleFormat": "Circuit Breaker",
+              "textFormat": "{{$labels.reason}}"
+            }
+          ]
+        }
+      }
+    }
+
+---
+# AlertManager Configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vpa-nap-alertmanager-config
+  namespace: platform
+type: Opaque
+stringData:
+  config.yml: |
+    global:
+      smtp_smarthost: 'smtp.company.com:587'
+      smtp_from: 'vpa-nap-alerts@company.com'
+      
+    route:
+      group_by: ['alertname', 'tenant_impact']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'web.hook'
+      routes:
+      
+      # Critical alerts - immediate notification
+      - match:
+          severity: critical
+        receiver: 'critical-alerts'
+        group_wait: 0s
+        repeat_interval: 15m
+        
+      # Tenant-specific routing
+      - match:
+          component: tenant
+        receiver: 'tenant-alerts'
+        group_by: ['tenant']
+        
+      # Premium tier gets priority
+      - match_re:
+          tenant: '^tenant-premium-.*'
+        receiver: 'premium-alerts'
+        group_wait: 0s
+        
+    receivers:
+    - name: 'web.hook'
+      webhook_configs:
+      - url: 'https://hooks.slack.com/webhook-url'
+        
+    - name: 'critical-alerts'
+      slack_configs:
+      - api_url: 'https://hooks.slack.com/critical-webhook'
+        channel: '#platform-critical'
+        title: 'VPA-NAP Critical Alert'
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+      email_configs:
+      - to: 'platform-oncall@company.com'
+        subject: 'VPA-NAP Critical Alert'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Runbook: {{ .Annotations.runbook_url }}
+          {{ end }}
+        
+    - name: 'tenant-alerts'
+      webhook_configs:
+      - url: 'https://tenant-notification-service.company.com/webhook'
+        
+    - name: 'premium-alerts'
+      pagerduty_configs:
+      - routing_key: 'premium-tenant-key'
+        description: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+
+---
+# Monitoring Resource Limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: vpa-monitoring-limits
+  namespace: platform
+spec:
+  limits:
+  - default:
+      cpu: "200m"
+      memory: "256Mi"
+    defaultRequest:
+      cpu: "100m" 
+      memory: "128Mi"
+    type: Container
+    
+---
+# Network Policy for Monitoring
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vpa-monitoring-netpol
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: vpa-nap-coordinator
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080

@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpa-rate-limiter-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    # Rate limiting configuration for VPA updates
+    rateLimits:
+      # Maximum VPA updates per namespace per hour
+      perNamespacePerHour: 10
+      # Maximum cluster-wide VPA updates per hour
+      clusterWidePerHour: 100
+      # Minimum time between updates for same pod (minutes)
+      minUpdateInterval: 30
+      # Maximum resource change percentage per update
+      maxResourceChangePercent: 25
+    
+    # NAP coordination settings
+    napCoordination:
+      # Delay after VPA update before NAP can act (seconds)
+      napActionDelay: 300
+      # Resource buffer to prevent NAP triggers
+      resourceBuffer:
+        cpu: "200m"
+        memory: "256Mi"
+    
+    # Circuit breaker thresholds
+    circuitBreaker:
+      # Max node churn rate per hour to trigger circuit breaker
+      maxNodeChurnPerHour: 5
+      # Cooldown period when circuit breaker trips (minutes)
+      cooldownMinutes: 60
+      # Disable VPA updates if cluster CPU > threshold
+      clusterCpuThreshold: 85
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionWebhook
+metadata:
+  name: vpa-rate-limiter
+webhooks:
+- name: vpa-rate-limiter.platform.io
+  clientConfig:
+    service:
+      name: vpa-rate-limiter
+      namespace: kube-system
+      path: "/validate"
+  rules:
+  - apiGroups: ["autoscaling.k8s.io"]
+    apiVersions: ["v1"]
+    resources: ["verticalpodautoscalers"]
+    operations: ["UPDATE"]
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+    operations: ["UPDATE"]
+    scope: "Namespaced"
+  namespaceSelector:
+    matchExpressions:
+    - key: tenant-tier
+      operator: In
+      values: ["dev", "standard", "premium"]
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  failurePolicy: Fail
+  timeoutSeconds: 10

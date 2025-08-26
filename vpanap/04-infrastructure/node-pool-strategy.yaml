@@ -1,0 +1,101 @@
+# Node Pool Configuration for VPA-NAP Coordination
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-pool-strategy
+  namespace: kube-system
+data:
+  strategy.yaml: |
+    nodePools:
+      # VPA-Managed Pool (Stable workloads)
+      vpa-managed:
+        labels:
+          autoscaling: "vpa"
+          workload-type: "stable"
+        taints:
+        - key: "vpa-managed"
+          value: "true"
+          effect: "NoSchedule"
+        napConfig:
+          enabled: false  # NAP disabled for VPA-managed pools
+        characteristics:
+          - Fixed node count
+          - Predictable resource allocation
+          - Long-running workloads
+      
+      # NAP-Managed Pool (Dynamic workloads)
+      nap-managed:
+        labels:
+          autoscaling: "nap"
+          workload-type: "dynamic"
+        napConfig:
+          enabled: true
+          consolidateAfter: "10m"  # Increased from default 30s
+          expireAfter: "15m"       # Increased from default 5m
+          # Account for VPA adjustments
+          utilizationThreshold: 70  # Lower threshold to reduce churn
+        characteristics:
+          - Variable node count
+          - Burst workloads
+          - Batch jobs
+      
+      # Hybrid Pool (Controlled VPA + NAP)
+      hybrid:
+        labels:
+          autoscaling: "hybrid"
+          workload-type: "mixed"
+        vpaConstraints:
+          updateMode: "Initial"  # Only set requests at pod creation
+          maxAllowed:
+            cpu: "4"
+            memory: "8Gi"
+        napConfig:
+          enabled: true
+          consolidateAfter: "30m"  # Conservative consolidation
+          expireAfter: "45m"
+          # Dampening factors
+          scaleDownUtilizationThreshold: 60
+          scaleUpRate: 0.5  # 50% slower scale-up
+---
+# VPA Policy per Node Pool
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: vpa-stable-workload-template
+  namespace: platform-system
+spec:
+  targetRef:
+    apiVersion: "apps/v1"
+    kind: Deployment
+    name: "stable-workload"
+  updatePolicy:
+    updateMode: "Auto"
+    # Critical: Prevent conflicts with NAP
+    evictionRequirements:
+      # Only evict when node has capacity
+      - resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+        changeRequirement: TargetHigherThanRequests
+    # Rate limiting
+    minReplicas: 2  # Maintain availability during updates
+  resourcePolicy:
+    containerPolicies:
+    - containerName: "*"
+      minAllowed:
+        cpu: 100m
+        memory: 128Mi
+      maxAllowed:
+        cpu: 2
+        memory: 4Gi
+      # Controlled growth to prevent NAP triggers
+      controlledValues: RequestsAndLimits
+      # VPA-NAP coordination
+      mode: "Auto"
+  recommenders:
+  - name: default
+    # Custom recommender with NAP awareness
+    parameters:
+      targetUtilization: 0.7  # Match NAP threshold
+      safetyMarginFraction: 0.15  # Buffer to prevent NAP activation

@@ -1,0 +1,323 @@
+# Tenant-Specific VPA Policies for Multi-Tenant Platform
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tenant-vpa-policies
+  namespace: platform-system
+data:
+  dev-tier-policy.yaml: |
+    # Development Tier - Aggressive optimization for cost savings
+    tenantTier: "dev"
+    vpaConfiguration:
+      updatePolicy:
+        updateMode: "Auto"  # Safe for dev environments
+        evictionRequirements:
+          - resources:
+              requests:
+                cpu: "100m"
+                memory: "128Mi"
+        minReplicas: 1  # Allow single replica disruption
+      
+      resourcePolicy:
+        containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: "50m"      # Lower minimums for cost efficiency
+            memory: "64Mi"
+          maxAllowed:
+            cpu: "1"        # Reasonable limits for dev workloads
+            memory: "2Gi"
+          controlledValues: "RequestsAndLimits"
+          # Aggressive scaling for dev
+          mode: "Auto"
+      
+      recommenderConfig:
+        targetUtilization: 0.8  # Higher utilization OK in dev
+        safetyMarginFraction: 0.1  # Smaller safety margin
+        historyLength: "7d"  # Shorter history for faster adaptation
+        
+      # Cost optimization settings
+      costOptimization:
+        enabled: true
+        aggressiveDownscaling: true
+        consolidationPriority: "high"
+        # Allow higher resource churn in dev
+        maxResourceChangePerHour: 50%
+      
+      # Dev-specific constraints
+      constraints:
+        maxPodDisruptions: 0.8  # Allow more disruption
+        consolidateAfterMin: 5   # Quick consolidation
+        scaleDownDelay: "2m"     # Fast scale-down
+  
+  standard-tier-policy.yaml: |
+    # Standard Tier - Balanced optimization with stability focus
+    tenantTier: "standard"
+    vpaConfiguration:
+      updatePolicy:
+        updateMode: "Initial"  # Conservative for production workloads
+        evictionRequirements:
+          - resources:
+              requests:
+                cpu: "200m"
+                memory: "256Mi"
+        minReplicas: 2  # Maintain availability
+      
+      resourcePolicy:
+        containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: "100m"
+            memory: "128Mi"
+          maxAllowed:
+            cpu: "4"        # Higher limits for standard tier
+            memory: "8Gi"
+          controlledValues: "RequestsOnly"  # Conservative approach
+          mode: "Initial"  # Only set at pod creation
+      
+      recommenderConfig:
+        targetUtilization: 0.7  # Balanced utilization
+        safetyMarginFraction: 0.15
+        historyLength: "14d"  # Longer observation period
+        
+      # Stability-first settings
+      stabilitySettings:
+        enabled: true
+        maxResourceChangePercent: 25  # Controlled growth
+        updateFrequencyLimit: "6h"    # Limited update frequency
+        gracePeriod: "300s"           # Longer grace period
+      
+      # Standard tier constraints
+      constraints:
+        maxPodDisruptions: 0.3  # Maintain availability
+        consolidateAfterMin: 15
+        scaleDownDelay: "10m"
+        # Prevent NAP conflicts
+        napCoordination:
+          enabled: true
+          bufferPercent: 20
+  
+  premium-tier-policy.yaml: |
+    # Premium Tier - Maximum stability with manual oversight
+    tenantTier: "premium"
+    vpaConfiguration:
+      updatePolicy:
+        updateMode: "Off"  # Recommendation only for premium
+        # Manual approval required for all changes
+        approvalRequired: true
+        
+      resourcePolicy:
+        containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: "500m"     # Higher baseline for premium
+            memory: "512Mi"
+          maxAllowed:
+            cpu: "16"       # Premium resource limits
+            memory: "32Gi"
+          controlledValues: "RequestsOnly"
+          mode: "Off"      # Human oversight required
+      
+      recommenderConfig:
+        targetUtilization: 0.6  # Conservative utilization
+        safetyMarginFraction: 0.25  # Large safety margin
+        historyLength: "30d"  # Long observation period
+        confidenceThreshold: 0.9  # High confidence required
+        
+      # Maximum stability settings
+      stabilityGuarantees:
+        enabled: true
+        slaCompliance: "99.95%"
+        zeroDisruption: true
+        manualApprovalWorkflow: true
+        changeWindow: "maintenance-only"
+      
+      # Premium constraints
+      constraints:
+        maxPodDisruptions: 0.05  # Minimal disruption allowed
+        consolidateAfterMin: 60  # Very conservative
+        scaleDownDelay: "30m"
+        # Strict NAP isolation
+        napCoordination:
+          enabled: true
+          isolatedNodePool: true
+          dedicatedNodes: true
+  
+  # Workload-Specific Overrides
+  workload-specific-policies.yaml: |
+    workloadPolicies:
+      
+      # Database Workloads - Never use VPA
+      database:
+        selector:
+          matchLabels:
+            workload-type: "database"
+        vpaPolicy:
+          enabled: false
+          reason: "Databases require predictable resources"
+        napPolicy:
+          nodeSelection: "dedicated-db-pool"
+          consolidation: "disabled"
+      
+      # Batch Jobs - Aggressive VPA
+      batch:
+        selector:
+          matchLabels:
+            workload-type: "batch"
+        vpaPolicy:
+          updateMode: "Auto"
+          targetUtilization: 0.9
+          maxResourceChange: 100%
+          consolidationPriority: "highest"
+        napPolicy:
+          preferSpotNodes: true
+          consolidateAfter: "1m"
+      
+      # Web Applications - Balanced approach
+      webapp:
+        selector:
+          matchLabels:
+            workload-type: "webapp"
+        vpaPolicy:
+          updateMode: "Initial"
+          targetUtilization: 0.7
+          rollingUpdateStrategy: true
+        napPolicy:
+          consolidateAfter: "10m"
+          preferStandardNodes: true
+      
+      # ML Training - Special handling
+      ml-training:
+        selector:
+          matchLabels:
+            workload-type: "ml-training"
+        vpaPolicy:
+          enabled: false  # GPU workloads need manual tuning
+        napPolicy:
+          nodeSelection: "gpu-enabled"
+          preemptible: false
+      
+      # Background Services - Conservative
+      background:
+        selector:
+          matchLabels:
+            workload-type: "background"
+        vpaPolicy:
+          updateMode: "Initial"
+          updateFrequency: "daily"
+          maxResourceChange: 20%
+        napPolicy:
+          preferSpotNodes: true
+          lowPriority: true
+  
+  # Tenant Onboarding Template
+  tenant-onboarding.yaml: |
+    # Template for new tenant VPA configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: tenant-{{TENANT_NAME}}-vpa-config
+      namespace: tenant-{{TENANT_NAME}}
+      labels:
+        tenant: "{{TENANT_NAME}}"
+        tier: "{{TENANT_TIER}}"
+        vpa-managed: "true"
+    data:
+      vpa-policy.yaml: |
+        # Auto-generated VPA policy for {{TENANT_NAME}}
+        # Tier: {{TENANT_TIER}}
+        # Generated: {{TIMESTAMP}}
+        
+        tenant:
+          name: "{{TENANT_NAME}}"
+          tier: "{{TENANT_TIER}}"
+          sla: "{{SLA_LEVEL}}"
+          
+        vpaSettings:
+          # Inherit from tier policy
+          inheritFrom: "{{TENANT_TIER}}-tier-policy"
+          
+          # Tenant-specific overrides
+          overrides:
+            resourceQuota: "{{RESOURCE_QUOTA}}"
+            priorityClass: "{{PRIORITY_CLASS}}"
+            nodeSelection: "{{NODE_SELECTION}}"
+          
+          # Monitoring configuration
+          monitoring:
+            dashboard: "tenant-{{TENANT_NAME}}-vpa"
+            alerting:
+              enabled: true
+              recipients: ["{{TENANT_CONTACTS}}"]
+            metrics:
+              retention: "{{METRICS_RETENTION}}"
+        
+        # Approval workflow for premium tiers
+        approvalWorkflow:
+          enabled: {{APPROVAL_REQUIRED}}
+          approvers: ["{{TENANT_APPROVERS}}"]
+          notificationChannels: ["{{NOTIFICATION_CHANNELS}}"]
+        
+        # Emergency procedures
+        emergency:
+          disableCommand: |
+            kubectl patch vpa -n tenant-{{TENANT_NAME}} --all \
+            --type merge -p '{"spec":{"updatePolicy":{"updateMode":"Off"}}}'
+          contactInfo: "{{EMERGENCY_CONTACT}}"
+          escalationPolicy: "{{ESCALATION_POLICY}}"
+---
+# VPA Policy Validation Webhook
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpa-policy-validator
+  namespace: platform-system
+data:
+  validation-rules.yaml: |
+    validationRules:
+      
+      # Tenant tier validation
+      tenantTier:
+        - rule: "dev tier must use node pool starting with 'dev-'"
+          check: "spec.nodeSelector['node-pool'] matches '^dev-.*'"
+          tenants: ["dev"]
+        
+        - rule: "premium tier must have dedicated nodes"
+          check: "spec.nodeSelector['tenant'] == metadata.namespace"
+          tenants: ["premium"]
+        
+        - rule: "standard tier cannot exceed 4 CPU"
+          check: "spec.resourcePolicy.containerPolicies[].maxAllowed.cpu <= '4'"
+          tenants: ["standard"]
+      
+      # Resource constraints
+      resources:
+        - rule: "minimum memory must be at least 64Mi"
+          check: "spec.resourcePolicy.containerPolicies[].minAllowed.memory >= '64Mi'"
+          
+        - rule: "max CPU cannot exceed node capacity"
+          check: "spec.resourcePolicy.containerPolicies[].maxAllowed.cpu <= node.capacity.cpu"
+        
+        - rule: "resource ratio must be reasonable"
+          check: "(maxAllowed.memory / maxAllowed.cpu) >= '1Gi'"
+      
+      # Stability requirements
+      stability:
+        - rule: "premium tenants cannot use Auto mode"
+          check: "spec.updatePolicy.updateMode != 'Auto'"
+          tenants: ["premium"]
+          
+        - rule: "production namespaces need minimum replicas"
+          check: "spec.updatePolicy.minReplicas >= 2"
+          environments: ["production"]
+        
+        - rule: "database workloads cannot use VPA"
+          check: "metadata.labels['workload-type'] != 'database'"
+      
+      # NAP coordination
+      napCoordination:
+        - rule: "VPA and NAP cannot both be aggressive"
+          check: "!(vpa.aggressive && nap.aggressive)"
+          
+        - rule: "resource changes must account for NAP buffer"
+          check: "maxResourceChange <= (1.0 - napBufferPercent)"

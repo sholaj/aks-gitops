@@ -1,0 +1,237 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpa-nap-monitoring
+  namespace: monitoring
+data:
+  prometheus-rules.yaml: |
+    groups:
+    - name: vpa-nap-conflicts
+      interval: 30s
+      rules:
+      
+      # Conflict Detection Metrics
+      - alert: VPANAPOscillation
+        expr: |
+          rate(vpa_recommendation_changes[5m]) > 0.5 
+          AND 
+          rate(cluster_autoscaler_nodes_count[5m]) != 0
+        for: 10m
+        labels:
+          severity: warning
+          component: vpa-nap
+        annotations:
+          summary: "VPA-NAP oscillation detected"
+          description: "VPA recommendations changing while NAP is scaling nodes. Changes: {{ $value }}/min"
+      
+      - alert: NodeChurnHigh
+        expr: |
+          sum(rate(kube_node_created[1h])) + sum(rate(kube_node_deleted[1h])) > 5
+        for: 5m
+        labels:
+          severity: critical
+          component: nap
+        annotations:
+          summary: "High node churn rate detected"
+          description: "Node churn rate: {{ $value }} nodes/hour. May indicate VPA-NAP conflict."
+      
+      - alert: PodEvictionStorm
+        expr: |
+          sum(rate(kube_pod_container_status_terminated_reason{reason="Evicted"}[10m])) > 20
+        for: 2m
+        labels:
+          severity: critical
+          component: vpa-nap
+        annotations:
+          summary: "Pod eviction storm detected"
+          description: "{{ $value }} pods evicted in 10 minutes. Check VPA and NAP coordination."
+      
+      # Resource Inflation Detection
+      - alert: ResourceRequestInflation
+        expr: |
+          (sum(kube_pod_container_resource_requests) / sum(kube_pod_container_resource_requests offset 1h)) > 1.3
+        for: 15m
+        labels:
+          severity: warning
+          component: vpa
+        annotations:
+          summary: "Resource request inflation detected"
+          description: "Cluster resource requests increased by {{ $value | humanizePercentage }} in 1 hour"
+      
+      # VPA-NAP Coordination Health
+      - alert: VPAUpdatesBlocked
+        expr: |
+          sum(rate(vpa_updater_evictions_total[5m])) == 0 
+          AND 
+          sum(vpa_recommendation_diff_percent) > 20
+        for: 30m
+        labels:
+          severity: warning
+          component: vpa
+        annotations:
+          summary: "VPA updates may be blocked"
+          description: "No VPA evictions despite {{ $value }}% recommendation difference"
+      
+      - alert: NAPConsolidationConflict
+        expr: |
+          kube_node_status_allocatable{resource="cpu"} < 0.3
+          AND
+          rate(vpa_recommendation_changes[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: nap
+        annotations:
+          summary: "NAP consolidation blocked by VPA activity"
+          description: "Underutilized nodes ({{ $value }}%) not consolidated due to VPA changes"
+      
+      # Tenant Impact Metrics
+      - alert: TenantResourceQuotaViolation
+        expr: |
+          (kube_resourcequota_usage / kube_resourcequota_hard) > 0.95
+          AND
+          rate(vpa_recommendation_changes[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: tenant
+        annotations:
+          summary: "Tenant approaching quota limit during VPA adjustment"
+          description: "Namespace {{ $labels.namespace }} at {{ $value | humanizePercentage }} quota with active VPA"
+      
+      # Circuit Breaker Metrics
+      - alert: VPANAPCircuitBreakerTriggered
+        expr: |
+          vpa_nap_coordinator_circuit_breaker_status == 1
+        for: 1m
+        labels:
+          severity: critical
+          component: coordinator
+        annotations:
+          summary: "VPA-NAP circuit breaker activated"
+          description: "Automatic scaling suspended due to conflict detection"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpa-nap-dashboards
+  namespace: monitoring
+data:
+  dashboard.json: |
+    {
+      "title": "VPA-NAP Coordination Dashboard",
+      "panels": [
+        {
+          "title": "Conflict Detection Score",
+          "targets": [
+            {
+              "expr": "sum(rate(vpa_recommendation_changes[5m])) * sum(rate(cluster_autoscaler_nodes_count[5m]))",
+              "legendFormat": "Conflict Score"
+            }
+          ],
+          "threshold": 0.5,
+          "description": "Higher values indicate potential VPA-NAP conflicts"
+        },
+        {
+          "title": "Node Lifecycle Events",
+          "targets": [
+            {
+              "expr": "rate(kube_node_created[5m])",
+              "legendFormat": "Nodes Created"
+            },
+            {
+              "expr": "rate(kube_node_deleted[5m])",
+              "legendFormat": "Nodes Deleted"
+            },
+            {
+              "expr": "rate(vpa_updater_evictions_total[5m])",
+              "legendFormat": "VPA Evictions"
+            }
+          ]
+        },
+        {
+          "title": "Resource Utilization vs Recommendations",
+          "targets": [
+            {
+              "expr": "avg(container_memory_usage_bytes / kube_pod_container_resource_requests{resource='memory'})",
+              "legendFormat": "Memory Utilization"
+            },
+            {
+              "expr": "avg(vpa_recommendation_diff_percent{resource='memory'})",
+              "legendFormat": "VPA Memory Recommendation Diff"
+            }
+          ]
+        },
+        {
+          "title": "Tenant Impact Analysis",
+          "targets": [
+            {
+              "expr": "count by (namespace) (kube_pod_status_phase{phase='Pending'} > 0)",
+              "legendFormat": "Pending Pods by Namespace"
+            },
+            {
+              "expr": "sum by (namespace) (rate(kube_pod_container_status_terminated_reason{reason='Evicted'}[5m]))",
+              "legendFormat": "Eviction Rate by Namespace"
+            }
+          ]
+        },
+        {
+          "title": "Cost Impact Estimation",
+          "targets": [
+            {
+              "expr": "sum(kube_node_info) * 2.5",
+              "legendFormat": "Estimated Hourly Cost ($)"
+            },
+            {
+              "expr": "sum(kube_pod_container_resource_requests{resource='cpu'}) * 0.05",
+              "legendFormat": "CPU Request Cost ($)"
+            }
+          ]
+        }
+      ],
+      "alertThresholds": {
+        "nodeChurnRate": 5,
+        "evictionRate": 10,
+        "conflictScore": 1.0,
+        "costIncreasePercent": 20
+      }
+    }
+---
+# Custom Metrics for VPA-NAP Coordination
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-metrics-config
+  namespace: monitoring
+data:
+  metrics.yaml: |
+    customMetrics:
+      # VPA-NAP Conflict Score (0-10)
+      - name: vpa_nap_conflict_score
+        query: |
+          clamp_max(
+            (rate(vpa_recommendation_changes[5m]) * 10) +
+            (rate(cluster_autoscaler_nodes_count[5m]) * 5) +
+            (rate(kube_pod_container_status_terminated_reason{reason="Evicted"}[5m]) * 2),
+            10
+          )
+        help: "Composite score indicating likelihood of VPA-NAP conflict"
+      
+      # Resource Oscillation Index
+      - name: resource_oscillation_index
+        query: |
+          stddev_over_time(
+            sum(kube_pod_container_resource_requests)[30m:5m]
+          ) / avg_over_time(
+            sum(kube_pod_container_resource_requests)[30m:5m]
+          )
+        help: "Coefficient of variation for resource requests"
+      
+      # NAP Efficiency with VPA
+      - name: nap_efficiency_with_vpa
+        query: |
+          1 - (
+            sum(rate(kube_node_created[1h])) /
+            sum(rate(vpa_updater_evictions_total[1h]))
+          )
+        help: "NAP efficiency considering VPA-triggered evictions"

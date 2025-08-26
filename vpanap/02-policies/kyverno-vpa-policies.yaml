@@ -1,0 +1,330 @@
+# Kyverno Policies for VPA-NAP Coordination
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: vpa-nap-conflict-prevention
+  annotations:
+    policies.kyverno.io/title: VPA-NAP Conflict Prevention
+    policies.kyverno.io/category: Multi-Tenancy, Resource Management
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: VPA, NAP
+    policies.kyverno.io/description: >-
+      Prevents VPA configurations that could conflict with NAP scaling decisions
+spec:
+  validationFailureAction: enforce
+  background: false
+  rules:
+  
+  # Rule 1: Prevent aggressive VPA on NAP-managed nodes
+  - name: prevent-aggressive-vpa-on-nap-nodes
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    validate:
+      message: "VPA updateMode 'Auto' not allowed on NAP-managed node pools"
+      pattern:
+        spec:
+          =(updatePolicy):
+            =(updateMode): "!Auto"
+      anyPattern:
+      - spec:
+          targetRef:
+            =(selector):
+              =(matchLabels):
+                =(node-pool): "!nap-*"
+      - spec:
+          =(updatePolicy):
+            =(updateMode): "Off | Initial"
+  
+  # Rule 2: Enforce resource change limits to prevent NAP conflicts
+  - name: enforce-vpa-resource-limits
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    validate:
+      message: "VPA resource changes must be limited to prevent NAP conflicts"
+      pattern:
+        spec:
+          =(resourcePolicy):
+            =(containerPolicies):
+            - =(maxAllowed):
+                cpu: "<=8"
+                memory: "<=16Gi"
+              =(minAllowed):
+                cpu: ">=50m"
+                memory: ">=64Mi"
+  
+  # Rule 3: Require NAP coordination labels
+  - name: require-nap-coordination-labels
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    validate:
+      message: "VPA must specify NAP coordination strategy"
+      pattern:
+        metadata:
+          labels:
+            nap-coordination: "isolated | coordinated | disabled"
+            conflict-risk: "low | medium | high"
+
+---
+# VPA Mutation Policy - Apply safe defaults based on tenant tier
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: vpa-safe-defaults
+  annotations:
+    policies.kyverno.io/title: VPA Safe Defaults
+    policies.kyverno.io/description: >-
+      Applies tenant-appropriate VPA defaults to prevent NAP conflicts
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  
+  # Rule 1: Apply dev tier defaults
+  - name: apply-dev-tier-vpa-defaults
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+          namespaces:
+          - "tenant-dev-*"
+    mutate:
+      patchStrategicMerge:
+        metadata:
+          labels:
+            tenant-tier: "dev"
+            vpa-mode: "aggressive"
+            nap-coordination: "coordinated"
+        spec:
+          updatePolicy:
+            updateMode: "Auto"
+            minReplicas: 1
+          resourcePolicy:
+            containerPolicies:
+            - containerName: "*"
+              minAllowed:
+                cpu: "50m"
+                memory: "64Mi"
+              maxAllowed:
+                cpu: "2"
+                memory: "4Gi"
+              controlledValues: "RequestsAndLimits"
+              # Rate limiting to prevent NAP conflicts
+              mode: "Auto"
+  
+  # Rule 2: Apply standard tier defaults  
+  - name: apply-standard-tier-vpa-defaults
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+          namespaces:
+          - "tenant-std-*"
+    mutate:
+      patchStrategicMerge:
+        metadata:
+          labels:
+            tenant-tier: "standard"
+            vpa-mode: "conservative"
+            nap-coordination: "isolated"
+        spec:
+          updatePolicy:
+            updateMode: "Initial"  # Conservative for production
+            minReplicas: 2
+          resourcePolicy:
+            containerPolicies:
+            - containerName: "*"
+              minAllowed:
+                cpu: "100m"
+                memory: "128Mi"
+              maxAllowed:
+                cpu: "4"
+                memory: "8Gi"
+              controlledValues: "RequestsOnly"
+              mode: "Initial"
+  
+  # Rule 3: Apply premium tier defaults
+  - name: apply-premium-tier-vpa-defaults
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+          namespaces:
+          - "tenant-premium-*"
+    mutate:
+      patchStrategicMerge:
+        metadata:
+          labels:
+            tenant-tier: "premium"
+            vpa-mode: "manual"
+            nap-coordination: "isolated"
+        spec:
+          updatePolicy:
+            updateMode: "Off"  # Recommendation only
+          resourcePolicy:
+            containerPolicies:
+            - containerName: "*"
+              minAllowed:
+                cpu: "500m"
+                memory: "512Mi"
+              maxAllowed:
+                cpu: "16"
+                memory: "32Gi"
+              controlledValues: "RequestsOnly"
+              mode: "Off"
+
+---
+# Node Pool Coordination Policy
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: node-pool-vpa-coordination
+  annotations:
+    policies.kyverno.io/title: Node Pool VPA Coordination
+    policies.kyverno.io/description: >-
+      Ensures VPA configurations are compatible with target node pools
+spec:
+  validationFailureAction: enforce
+  background: false
+  rules:
+  
+  # Rule 1: VPA workloads must target compatible node pools
+  - name: validate-vpa-nodepool-compatibility
+    match:
+      any:
+      - resources:
+          kinds:
+          - Deployment
+          - StatefulSet
+    preconditions:
+      any:
+      - key: "{{ request.object.metadata.labels.\"vpa-enabled\" || 'false' }}"
+        operator: Equals
+        value: "true"
+    validate:
+      message: "VPA-enabled workloads must target compatible node pools"
+      anyPattern:
+      # Pattern 1: VPA-dedicated nodes
+      - spec:
+          template:
+            spec:
+              nodeSelector:
+                node-pool: "vpa-*"
+              tolerations:
+              - key: "vpa-managed"
+                operator: "Equal"
+                value: "true"
+                effect: "NoSchedule"
+      # Pattern 2: Hybrid nodes with coordination
+      - spec:
+          template:
+            spec:
+              nodeSelector:
+                node-pool: "hybrid-*"
+                nap-vpa-coordination: "enabled"
+      # Pattern 3: NAP nodes with VPA disabled
+      - spec:
+          template:
+            spec:
+              nodeSelector:
+                node-pool: "nap-*"
+        metadata:
+          labels:
+            vpa-enabled: "false"
+
+---
+# Workload-Specific VPA Policies
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: workload-specific-vpa-rules
+  annotations:
+    policies.kyverno.io/title: Workload-Specific VPA Rules
+    policies.kyverno.io/description: >-
+      Applies VPA policies based on workload characteristics
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+  
+  # Rule 1: Databases cannot use VPA
+  - name: block-vpa-for-databases
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    validate:
+      message: "VPA not allowed for database workloads - use manual resource allocation"
+      deny:
+        conditions:
+        - key: "{{ request.object.spec.targetRef.selector.matchLabels.\"workload-type\" || '' }}"
+          operator: AnyIn
+          value: ["database", "postgresql", "mysql", "redis", "mongodb"]
+  
+  # Rule 2: Batch jobs get aggressive VPA
+  - name: enforce-batch-vpa-settings
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    preconditions:
+      any:
+      - key: "{{ request.object.spec.targetRef.selector.matchLabels.\"workload-type\" || '' }}"
+        operator: Equals
+        value: "batch"
+    mutate:
+      patchStrategicMerge:
+        metadata:
+          labels:
+            workload-type: "batch"
+            vpa-mode: "aggressive"
+        spec:
+          updatePolicy:
+            updateMode: "Auto"
+          resourcePolicy:
+            containerPolicies:
+            - containerName: "*"
+              # Allow larger resource changes for batch
+              controlledValues: "RequestsAndLimits"
+              mode: "Auto"
+  
+  # Rule 3: Web apps get balanced settings
+  - name: enforce-webapp-vpa-settings
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    preconditions:
+      any:
+      - key: "{{ request.object.spec.targetRef.selector.matchLabels.\"workload-type\" || '' }}"
+        operator: Equals
+        value: "webapp"
+    mutate:
+      patchStrategicMerge:
+        metadata:
+          labels:
+            workload-type: "webapp"
+            vpa-mode: "balanced"
+        spec:
+          updatePolicy:
+            updateMode: "Initial"
+            minReplicas: 2  # Maintain availability
+          resourcePolicy:
+            containerPolicies:
+            - containerName: "*"
+              controlledValues: "RequestsOnly"
+              mode: "Initial"

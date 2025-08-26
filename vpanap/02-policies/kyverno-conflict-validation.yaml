@@ -1,0 +1,319 @@
+# Advanced Kyverno Validation Rules for VPA-NAP Conflict Prevention
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: advanced-vpa-nap-validation
+  annotations:
+    policies.kyverno.io/title: Advanced VPA-NAP Conflict Prevention
+    policies.kyverno.io/category: Resource Management, Conflict Prevention
+    policies.kyverno.io/severity: critical
+spec:
+  validationFailureAction: enforce
+  background: false
+  rules:
+  
+  # Rule 1: Prevent resource oscillation patterns
+  - name: prevent-oscillation-patterns
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    context:
+    - name: currentRequests
+      apiCall:
+        urlPath: "/api/v1/namespaces/{{ request.namespace }}/pods"
+        jmesPath: "items[?metadata.labels.app=='{{ request.object.spec.targetRef.name }}'].spec.containers[0].resources.requests"
+    - name: vpaHistory
+      apiCall:
+        urlPath: "/apis/autoscaling.k8s.io/v1/namespaces/{{ request.namespace }}/verticalpodautoscalercheckpoints"
+        jmesPath: "items[?metadata.name=='{{ request.object.metadata.name }}'].spec.containerCheckpoints[0].lastSampleStart"
+    validate:
+      message: "VPA configuration may cause resource oscillation"
+      deny:
+        conditions:
+        # Deny if max/min ratio > 10x (likely to cause oscillation)
+        - key: "{{ divide(request.object.spec.resourcePolicy.containerPolicies[0].maxAllowed.memory, request.object.spec.resourcePolicy.containerPolicies[0].minAllowed.memory) }}"
+          operator: GreaterThan
+          value: 10
+        # Deny if update mode is Auto with high volatility target ref
+        - key: "{{ request.object.spec.updatePolicy.updateMode }}"
+          operator: Equals
+          value: "Auto"
+        - key: "{{ request.object.spec.targetRef.selector.matchLabels.\"workload-volatility\" || 'low' }}"
+          operator: Equals
+          value: "high"
+
+  # Rule 2: Validate NAP coordination strategy exists
+  - name: validate-nap-coordination-strategy
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    context:
+    - name: nodePool
+      apiCall:
+        urlPath: "/api/v1/nodes"
+        jmesPath: "items[?metadata.labels.\"node-pool\"=='{{ request.object.metadata.labels.\"target-node-pool\" || '' }}'] | [0]"
+    validate:
+      message: "VPA must specify valid NAP coordination strategy for target node pool"
+      pattern:
+        metadata:
+          labels:
+            nap-coordination: "isolated | coordinated | disabled"
+      anyPattern:
+      # Pattern 1: Isolated VPA (dedicated node pool)
+      - metadata:
+          labels:
+            nap-coordination: "isolated"
+            target-node-pool: "vpa-*"
+      # Pattern 2: Coordinated VPA (requires rate limiting)  
+      - metadata:
+          labels:
+            nap-coordination: "coordinated"
+        spec:
+          =(updatePolicy):
+            =(evictionRequirements):
+            - =(resources):
+                =(requests):
+                  cpu: ">=500m"
+                  memory: ">=1Gi"
+      # Pattern 3: NAP disabled (recommendation only)
+      - metadata:
+          labels:
+            nap-coordination: "disabled"
+        spec:
+          updatePolicy:
+            updateMode: "Off"
+
+  # Rule 3: Prevent concurrent scaling conflicts
+  - name: prevent-concurrent-scaling-conflicts  
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    context:
+    - name: targetDeployment
+      apiCall:
+        urlPath: "/apis/apps/v1/namespaces/{{ request.namespace }}/deployments/{{ request.object.spec.targetRef.name }}"
+        jmesPath: "spec"
+    - name: hpaExists
+      apiCall:
+        urlPath: "/apis/autoscaling/v2/namespaces/{{ request.namespace }}/horizontalpodautoscalers"
+        jmesPath: "items[?spec.scaleTargetRef.name=='{{ request.object.spec.targetRef.name }}'] | length(@)"
+    validate:
+      message: "VPA cannot coexist with HPA on same target"
+      deny:
+        conditions:
+        - key: "{{ hpaExists }}"
+          operator: GreaterThan
+          value: 0
+        - key: "{{ request.object.spec.updatePolicy.updateMode }}"
+          operator: AnyIn
+          value: ["Auto", "Initial"]
+
+  # Rule 4: Enforce resource quotas compatibility
+  - name: enforce-quota-compatibility
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    context:
+    - name: namespaceQuota
+      apiCall:
+        urlPath: "/api/v1/namespaces/{{ request.namespace }}/resourcequotas"
+        jmesPath: "items[0].spec.hard"
+    validate:
+      message: "VPA maxAllowed resources must not exceed namespace quota"
+      deny:
+        conditions:
+        # Check if VPA max CPU exceeds 80% of quota (buffer for other workloads)
+        - key: "{{ multiply(to_number(namespaceQuota.\"requests.cpu\" || '0'), 0.8) }}"
+          operator: LessThan
+          value: "{{ to_number(request.object.spec.resourcePolicy.containerPolicies[0].maxAllowed.cpu || '0') }}"
+        # Check if VPA max memory exceeds 80% of quota
+        - key: "{{ multiply(to_number(namespaceQuota.\"requests.memory\" || '0'), 0.8) }}"
+          operator: LessThan  
+          value: "{{ to_number(request.object.spec.resourcePolicy.containerPolicies[0].maxAllowed.memory || '0') }}"
+
+  # Rule 5: Validate tenant boundaries
+  - name: validate-tenant-boundaries
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    context:
+    - name: tenantTier
+      variable:
+        jmesPath: "request.object.metadata.namespace | split('-') | [1]"  # Extract from tenant-{tier}-{name}
+    validate:
+      message: "VPA configuration violates tenant tier boundaries"
+      anyPattern:
+      # Dev tier patterns
+      - metadata:
+          namespace: "tenant-dev-*"
+        spec:
+          resourcePolicy:
+            containerPolicies:
+            - maxAllowed:
+                cpu: "<=2"
+                memory: "<=4Gi"
+      # Standard tier patterns  
+      - metadata:
+          namespace: "tenant-std-*"
+        spec:
+          resourcePolicy:
+            containerPolicies:
+            - maxAllowed:
+                cpu: "<=8"
+                memory: "<=16Gi"
+          updatePolicy:
+            updateMode: "Initial | Off"
+      # Premium tier patterns
+      - metadata:
+          namespace: "tenant-premium-*"
+        spec:
+          updatePolicy:
+            updateMode: "Off"
+
+---
+# Circuit Breaker Validation Policy
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: vpa-circuit-breaker-validation
+  annotations:
+    policies.kyverno.io/title: VPA Circuit Breaker Validation
+    policies.kyverno.io/description: >-
+      Prevents VPA creation/updates when circuit breaker conditions are met
+spec:
+  validationFailureAction: enforce
+  background: false
+  rules:
+  
+  # Rule 1: Check cluster stability before allowing VPA changes
+  - name: check-cluster-stability
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    context:
+    - name: recentNodeChanges
+      apiCall:
+        urlPath: "/api/v1/events?fieldSelector=involvedObject.kind=Node,reason=NodeReady"
+        jmesPath: "items[?metadata.creationTimestamp > '{{ (now | dateModify \"-5m\").Format \"2006-01-02T15:04:05Z\" }}'] | length(@)"
+    - name: recentEvictions
+      apiCall:
+        urlPath: "/api/v1/events?fieldSelector=reason=Evicted"
+        jmesPath: "items[?metadata.creationTimestamp > '{{ (now | dateModify \"-10m\").Format \"2006-01-02T15:04:05Z\" }}'] | length(@)"
+    validate:
+      message: "VPA changes blocked due to cluster instability (circuit breaker active)"
+      deny:
+        conditions:
+        # Block if too many recent node changes (indicates NAP activity)
+        - key: "{{ recentNodeChanges }}"
+          operator: GreaterThan
+          value: 5
+        # Block if too many recent evictions
+        - key: "{{ recentEvictions }}"
+          operator: GreaterThan
+          value: 20
+
+  # Rule 2: Check namespace-level stability
+  - name: check-namespace-stability
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+    context:
+    - name: namespacePodChurn
+      apiCall:
+        urlPath: "/api/v1/namespaces/{{ request.namespace }}/events?fieldSelector=reason=Killing"
+        jmesPath: "items[?metadata.creationTimestamp > '{{ (now | dateModify \"-15m\").Format \"2006-01-02T15:04:05Z\" }}'] | length(@)"
+    - name: namespaceResourceUsage
+      apiCall:
+        urlPath: "/api/v1/namespaces/{{ request.namespace }}/pods"
+        jmesPath: "items[?status.phase=='Running'] | length(@)"
+    validate:
+      message: "VPA changes blocked due to namespace instability"
+      deny:
+        conditions:
+        - key: "{{ namespacePodChurn }}"
+          operator: GreaterThan
+          value: 10
+        - key: "{{ request.object.spec.updatePolicy.updateMode }}"
+          operator: Equals
+          value: "Auto"
+
+---
+# Resource Change Rate Limiting
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: vpa-rate-limiting-validation
+  annotations:
+    policies.kyverno.io/title: VPA Rate Limiting
+    policies.kyverno.io/description: >-
+      Enforces rate limits on VPA resource changes to prevent NAP conflicts
+spec:
+  validationFailureAction: enforce  
+  background: false
+  rules:
+  
+  # Rule 1: Limit resource change magnitude
+  - name: limit-resource-change-magnitude
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+        operations:
+        - UPDATE
+    context:
+    - name: currentVPA
+      apiCall:
+        urlPath: "/apis/autoscaling.k8s.io/v1/namespaces/{{ request.namespace }}/verticalpodautoscalers/{{ request.name }}"
+        jmesPath: "spec.resourcePolicy.containerPolicies[0]"
+    validate:
+      message: "VPA resource change exceeds maximum allowed rate"
+      deny:
+        conditions:
+        # Prevent >50% CPU increase in single update
+        - key: "{{ divide(to_number(request.object.spec.resourcePolicy.containerPolicies[0].maxAllowed.cpu || '1'), to_number(currentVPA.maxAllowed.cpu || '1')) }}"
+          operator: GreaterThan
+          value: 1.5
+        # Prevent >50% memory increase in single update  
+        - key: "{{ divide(to_number(request.object.spec.resourcePolicy.containerPolicies[0].maxAllowed.memory || '1Gi'), to_number(currentVPA.maxAllowed.memory || '1Gi')) }}"
+          operator: GreaterThan
+          value: 1.5
+
+  # Rule 2: Enforce cooldown periods between updates
+  - name: enforce-update-cooldown
+    match:
+      any:
+      - resources:
+          kinds:
+          - VerticalPodAutoscaler
+        operations:
+        - UPDATE
+    context:
+    - name: lastUpdate
+      apiCall:
+        urlPath: "/apis/autoscaling.k8s.io/v1/namespaces/{{ request.namespace }}/verticalpodautoscalers/{{ request.name }}"
+        jmesPath: "metadata.annotations.\"last-update-time\" || ''"
+    validate:
+      message: "VPA updates must respect cooldown period (minimum 30 minutes)"
+      deny:
+        conditions:
+        - key: "{{ ((now | dateModify \"-30m\") | dateInZone \"UTC\") }}"
+          operator: GreaterThan
+          value: "{{ lastUpdate }}"
+        - key: "{{ lastUpdate }}"
+          operator: NotEquals
+          value: ""
