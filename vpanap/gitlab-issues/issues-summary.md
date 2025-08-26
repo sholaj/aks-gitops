@@ -3,16 +3,19 @@
 ## Overview
 This document provides a comprehensive overview of all GitLab issues created for the VPA-NAP integration follow-up activities. These issues cover the complete lifecycle from production deployment to continuous improvement, ensuring successful operation and evolution of the system.
 
-## Issues Priority Matrix
+## ⚠️ UPDATED PRIORITIES - Testing Phase Focus
 
-### Critical Priority
-- **Issue #04:** Security Hardening Validation (28h) - Security compliance and vulnerability management
+### Critical Priority (Must Complete Before Production)
+- **Issue #03:** Performance Testing and Optimization (36h) - **PRIORITY 1** - Comprehensive testing strategy
+- **Issue #04:** Security Hardening Validation (28h) - **PRIORITY 2** - Security compliance and vulnerability management
 
-### High Priority
-- **Issue #01:** Production Deployment and Rollout (40h) - Blue-green deployment pipeline and automation
-- **Issue #02:** Monitoring and Alerting Setup (32h) - Comprehensive observability and SLI/SLO monitoring
-- **Issue #03:** Performance Testing and Optimization (36h) - Load testing and performance validation
-- **Issue #07:** Disaster Recovery Testing (40h) - Business continuity and recovery procedures
+### High Priority (Testing and Validation Focus)  
+- **Issue #02:** Monitoring and Alerting Setup (32h) - **PRIORITY 3** - Required for testing phase observability
+- **NEW:** Integration Testing Framework (40h) - **PRIORITY 4** - End-to-end integration validation
+- **Issue #07:** Disaster Recovery Testing (40h) - **PRIORITY 5** - Chaos engineering and resilience testing
+
+### Medium Priority (Post-Testing Activities)
+- **Issue #01:** Production Deployment and Rollout (40h) - **DEFERRED** - Only after successful testing completion
 
 ### Medium Priority
 - **Issue #05:** Tenant Onboarding Process (24h) - Automated multi-tenant onboarding

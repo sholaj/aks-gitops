@@ -2,12 +2,24 @@
 
 ## Overview
 
-This directory contains a production-ready Vertical Pod Autoscaler (VPA) and Node Auto Provisioner (NAP) integration designed for multi-tenant AKS clusters. The integration prevents scaling conflicts while maintaining cluster stability and cost efficiency.
+This directory contains a comprehensive Vertical Pod Autoscaler (VPA) and Node Auto Provisioner (NAP) integration solution designed for multi-tenant AKS clusters. The integration prevents scaling conflicts while maintaining cluster stability and cost efficiency.
 
-## Quick Start
+**Current Status:** Ready for detailed testing and integration phase
+
+## ⚠️ Important: Pre-Production Testing Required
+
+This solution requires extensive testing and integration validation before production deployment. See the [Testing Strategy](#testing-strategy) section for required validation steps.
+
+## Quick Start (Development/Testing Environment Only)
 
 ```bash
-# Deploy in order:
+# Deploy in TEST environment only:
+kubectl apply -f 01-foundation/ --dry-run=server  # Validate first
+kubectl apply -f 02-policies/ --dry-run=server
+kubectl apply -f 03-monitoring/ --dry-run=server
+kubectl apply -f 04-infrastructure/ --dry-run=server
+
+# After validation, deploy to TEST cluster:
 kubectl apply -f 01-foundation/
 kubectl apply -f 02-policies/
 kubectl apply -f 03-monitoring/
@@ -66,12 +78,38 @@ The VPA-NAP integration provides:
 - Comprehensive testing framework
 - Operational runbooks and procedures
 
-## Prerequisites
+## Testing Strategy
+
+### Required Testing Phases
+
+Before production deployment, complete these testing phases:
+
+#### Phase 1: Component Testing (2-3 weeks)
+- **Unit Tests**: Validate individual components and configurations
+- **Integration Tests**: Test component interactions and dependencies
+- **Policy Tests**: Verify Kyverno policies work as expected
+- **Security Tests**: Validate RBAC, network policies, and hardening
+
+#### Phase 2: System Integration Testing (3-4 weeks)  
+- **End-to-End Testing**: Full workflow validation
+- **Multi-Tenant Testing**: Validate tenant isolation and tier policies
+- **Conflict Simulation**: Test VPA-NAP conflict detection and prevention
+- **Performance Testing**: Load testing and resource usage validation
+
+#### Phase 3: Pre-Production Validation (2-3 weeks)
+- **Staging Environment**: Deploy in production-like environment
+- **Chaos Testing**: Network partitions, node failures, resource exhaustion
+- **Disaster Recovery**: Test backup/restore and emergency procedures
+- **Operational Readiness**: Validate monitoring, alerting, and runbooks
+
+### Testing Prerequisites
 
 - Kubernetes 1.23+
 - Vertical Pod Autoscaler 0.11+
 - Kyverno 1.8+
 - Prometheus Operator (recommended)
+- **Dedicated test clusters** (dev, staging, pre-prod)
+- **Test workloads** representing real tenant applications
 
 ## Configuration
 
