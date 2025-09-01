@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Pre-push hook to enforce commit message standards
+# Pattern: feat|fix|update: JIRA-XXX
+# Example: feat: CCBR-123 Add new authentication module
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Read from stdin: local_ref local_sha remote_ref remote_sha
+while read local_ref local_sha remote_ref remote_sha
+do
+    # Skip if deleting a branch
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+    fi
+
+    # Get list of commits being pushed
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        # New branch, check all commits
+        range="$local_sha"
+    else
+        # Existing branch, check commits since remote
+        range="$remote_sha..$local_sha"
+    fi
+
+    # Check each commit message in the range
+    git rev-list "$range" | while read commit; do
+        commit_msg=$(git log --format=%B -n 1 "$commit" | head -n 1)
+        
+        # Define the regex pattern for commit messages
+        # Pattern: (feat|fix|update): JIRA-[A-Z0-9]+ followed by description
+        if ! echo "$commit_msg" | grep -qE "^(feat|fix|update): [A-Z]+-[0-9]+"; then
+            echo -e "${RED}❌ COMMIT MESSAGE VALIDATION FAILED${NC}"
+            echo -e "${RED}Commit: $commit${NC}"
+            echo -e "${RED}Message: '$commit_msg'${NC}"
+            echo ""
+            echo -e "${YELLOW}📋 REQUIRED FORMAT:${NC}"
+            echo -e "${GREEN}feat: JIRA-XXX Description of the feature${NC}"
+            echo -e "${GREEN}fix: JIRA-XXX Description of the bug fix${NC}"
+            echo -e "${GREEN}update: JIRA-XXX Description of the update${NC}"
+            echo ""
+            echo -e "${YELLOW}📝 EXAMPLES:${NC}"
+            echo -e "${GREEN}feat: CCBR-123 Add user authentication module${NC}"
+            echo -e "${GREEN}fix: CCBR-456 Resolve memory leak in data processing${NC}"
+            echo -e "${GREEN}update: CCBR-789 Update API documentation${NC}"
+            echo ""
+            echo -e "${YELLOW}ℹ️  PATTERN REQUIREMENTS:${NC}"
+            echo "  • Start with: feat, fix, or update"
+            echo "  • Followed by: colon and space ': '"
+            echo "  • JIRA ticket: PROJECT-NUMBER (e.g., CCBR-123)"
+            echo "  • Space and description of the change"
+            echo ""
+            echo -e "${RED}🚫 Push rejected. Please fix the commit message and try again.${NC}"
+            exit 1
+        fi
+    done
+done
+
+echo -e "${GREEN}✅ All commit messages follow the required format${NC}"
+exit 0
