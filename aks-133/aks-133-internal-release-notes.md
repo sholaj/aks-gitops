@@ -217,15 +217,144 @@ AKS 1.33 introduces significant improvements in resource management, security, a
 
 ## Appendix
 
-### A. API Deprecations
-```yaml
-# Deprecated in 1.33, removed in 1.36
-- batch/v1beta1/CronJob → batch/v1/CronJob
-- networking.k8s.io/v1beta1/Ingress → networking.k8s.io/v1/Ingress
-- policy/v1beta1/PodSecurityPolicy → Removed (use Pod Security Standards)
+### A. Deprecated APIs
+
+This section documents all APIs that are deprecated or removed in AKS 1.33, along with their replacements and migration guidance.
+
+#### Kubernetes API Deprecations
+
+##### CronJob API (batch/v1beta1)
+
+- **Deprecated API**: `batch/v1beta1/CronJob`
+- **Replacement**: `batch/v1/CronJob`
+- **Status**: Deprecated in 1.33, will be removed in 1.36
+- **Migration**: Update your manifests to use `apiVersion: batch/v1`
+- **Impact**: Low - stable API has been available since Kubernetes 1.21
+
+##### Ingress API (networking.k8s.io/v1beta1)
+
+- **Deprecated API**: `networking.k8s.io/v1beta1/Ingress`
+- **Replacement**: `networking.k8s.io/v1/Ingress`
+- **Status**: Deprecated in 1.33, will be removed in 1.36
+- **Migration**: Update your manifests to use `apiVersion: networking.k8s.io/v1`
+- **Impact**: Low - stable API has been available since Kubernetes 1.19
+
+##### Endpoints API (Stable)
+
+- **Deprecated API**: `v1/Endpoints`
+- **Replacement**: `discovery.k8s.io/v1/EndpointSlice`
+- **Status**: Deprecated in 1.33 (removal timeline TBD)
+- **Migration**: Migrate workloads and scripts to use EndpointSlices API
+- **Impact**: Medium - affects direct API usage, not typical workload deployments
+
+#### Azure-Specific API Deprecations
+
+##### Pod Security Policies
+
+- **Deprecated Feature**: Pod Security Policies (PSP)
+- **Replacement**: Pod Security Standards
+- **Status**: Completely removed in 1.33
+- **Migration**: Migrate to Pod Security Standards with three profiles:
+  - `Privileged`: No restrictions
+  - `Baseline`: Minimally restrictive
+  - `Restricted`: Heavily restricted
+- **Impact**: High - requires immediate action before upgrade
+
+##### Legacy Azure Storage Drivers
+
+- **Deprecated Feature**: In-tree Azure Disk/File drivers
+- **Replacement**: CSI drivers (Azure Disk CSI, Azure File CSI)
+- **Status**: Removed in 1.33 (migration completed)
+- **Migration**: Automatic migration via CSI migration feature gates
+- **Impact**: Low - migration is automatic, but verify CSI driver functionality
+
+#### Feature Removals
+
+##### kube-proxy Version Field
+
+- **Removed Field**: `status.nodeInfo.kubeProxyVersion`
+- **Reason**: Field value was not consistently accurate
+- **Status**: Completely removed in 1.33 (deprecated in 1.31)
+- **Impact**: Low - field was disabled by default since 1.31
+
+##### Host Network for Windows Pods
+
+- **Removed Feature**: Host network support for Windows pods
+- **Reason**: Unexpected containerd behaviors and available alternatives
+- **Status**: Completely removed in 1.33
+- **Impact**: Medium - affects Windows workloads using host networking
+
+#### Migration Commands and Examples
+
+Check for deprecated API usage:
+
+```bash
+# Find deprecated APIs in your cluster
+kubectl get --raw /api/v1 | jq -r '.resources[] | select(.deprecated) | .name'
+
+# Check for deprecated APIs in manifests
+kubectl apply --dry-run=server --validate=true -f your-manifests/
 ```
 
+Migrate CronJob manifests:
+
+```yaml
+# Before (deprecated)
+apiVersion: batch/v1beta1
+kind: CronJob
+
+# After (stable)
+apiVersion: batch/v1
+kind: CronJob
+```
+
+Migrate Ingress manifests:
+
+```yaml
+# Before (deprecated)
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+
+# After (stable)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+```
+
+Pod Security Standards Migration:
+
+```yaml
+# Apply at namespace level
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: example-namespace
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+```
+
+#### Impact Assessment
+
+##### High Impact (Immediate Action Required)
+
+- **Pod Security Policies**: Complete removal requires immediate migration
+- **Windows Host Networking**: Affects Windows workloads using host networking
+
+##### Medium Impact (Plan Migration)
+
+- **Endpoints API Deprecation**: Affects scripts and workloads directly using Endpoints API
+- **Windows Container Changes**: Review Windows-specific configurations
+
+##### Low Impact (Update When Convenient)
+
+- **CronJob API**: Stable replacement available since 1.21
+- **Ingress API**: Stable replacement available since 1.19
+- **Storage Driver Migration**: Automatic via feature gates
+- **Node Status Fields**: Field already disabled by default
+
 ### B. Feature Gates Changes
+
 ```yaml
 # Graduated to GA (enabled by default, cannot be disabled)
 - IPv6DualStack: true
@@ -239,6 +368,7 @@ AKS 1.33 introduces significant improvements in resource management, security, a
 ```
 
 ### C. Sample Pod Resize Command
+
 ```bash
 # Resize pod resources dynamically
 kubectl patch deployment nginx-deployment -p '{"spec":{"template":{"spec":{"containers":[{"name":"nginx","resources":{"requests":{"memory":"256Mi","cpu":"200m"},"limits":{"memory":"512Mi","cpu":"400m"}}}]}}}}'
