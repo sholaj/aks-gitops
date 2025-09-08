@@ -1,0 +1,226 @@
+---
+- name: MS SQL Server Compliance Scanning with InSpec
+  hosts: mssql_scanners
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # MS SQL Server connection parameters
+    mssql_host: "{{ hostvars[inventory_hostname]['mssql_host'] | default('localhost') }}"
+    mssql_port: "{{ hostvars[inventory_hostname]['mssql_port'] | default(1433) }}"
+    mssql_user: "{{ hostvars[inventory_hostname]['mssql_user'] | default('test_user') }}"
+    mssql_password: "{{ hostvars[inventory_hostname]['mssql_password'] | default('P@ssw0rd') }}"
+    mssql_database: "{{ hostvars[inventory_hostname]['mssql_database'] | default('test_db') }}"
+    
+    # InSpec configuration
+    inspec_profile_path: "/tmp/inspec-profiles/mssql-compliance"
+    inspec_output_dir: "/tmp/inspec-results"
+    inspec_output_format: "json"
+    
+    # Compliance reporting
+    compliance_report_name: "mssql-compliance-{{ ansible_date_time.epoch }}"
+    
+  tasks:
+    - name: Install required packages
+      package:
+        name:
+          - curl
+          - telnet
+        state: present
+      when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+    
+    - name: Install InSpec
+      block:
+        - name: Download InSpec installation script
+          get_url:
+            url: https://omnitruck.chef.io/install.sh
+            dest: /tmp/install_inspec.sh
+            mode: '0755'
+        
+        - name: Install InSpec
+          shell: /tmp/install_inspec.sh -P inspec
+          args:
+            creates: /usr/bin/inspec
+          register: inspec_install
+        
+        - name: Verify InSpec installation
+          command: inspec version
+          register: inspec_version
+          changed_when: false
+        
+        - name: Display InSpec version
+          debug:
+            msg: "InSpec version: {{ inspec_version.stdout }}"
+    
+    - name: Install MS SQL Server tools (if not present)
+      block:
+        - name: Check if sqlcmd is available
+          command: which sqlcmd
+          register: sqlcmd_check
+          failed_when: false
+          changed_when: false
+        
+        - name: Install MS SQL Server tools on Ubuntu/Debian
+          block:
+            - name: Add Microsoft repository key
+              apt_key:
+                url: https://packages.microsoft.com/keys/microsoft.asc
+                state: present
+            
+            - name: Add Microsoft repository
+              apt_repository:
+                repo: "deb [arch=amd64,armhf,arm64] https://packages.microsoft.com/ubuntu/{{ ansible_distribution_version }}/prod {{ ansible_distribution_release }} main"
+                state: present
+                update_cache: yes
+            
+            - name: Install mssql-tools
+              apt:
+                name: mssql-tools
+                state: present
+                update_cache: yes
+              environment:
+                ACCEPT_EULA: Y
+          when: ansible_os_family == "Debian" and sqlcmd_check.rc != 0
+        
+        - name: Install MS SQL Server tools on RedHat/CentOS
+          block:
+            - name: Add Microsoft repository
+              yum_repository:
+                name: mssql-tools
+                description: Microsoft SQL Server Tools
+                baseurl: "https://packages.microsoft.com/rhel/{{ ansible_distribution_major_version }}/prod"
+                gpgcheck: yes
+                gpgkey: https://packages.microsoft.com/keys/microsoft.asc
+                enabled: yes
+            
+            - name: Install mssql-tools
+              yum:
+                name: mssql-tools
+                state: present
+              environment:
+                ACCEPT_EULA: Y
+          when: ansible_os_family == "RedHat" and sqlcmd_check.rc != 0
+    
+    - name: Create InSpec working directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ inspec_profile_path }}"
+        - "{{ inspec_profile_path }}/controls"
+        - "{{ inspec_output_dir }}"
+    
+    - name: Copy InSpec profile files
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: '0644'
+      loop:
+        - { src: "../inspec-profiles/inspec.yml", dest: "{{ inspec_profile_path }}/inspec.yml" }
+        - { src: "../inspec-profiles/controls/mssql_security.rb", dest: "{{ inspec_profile_path }}/controls/mssql_security.rb" }
+    
+    - name: Test MS SQL Server connectivity before scanning
+      block:
+        - name: Test basic connectivity
+          shell: |
+            timeout 10 bash -c "echo > /dev/tcp/{{ mssql_host }}/{{ mssql_port }}" || exit 1
+          register: connectivity_test
+          changed_when: false
+        
+        - name: Test SQL Server authentication
+          shell: |
+            /opt/mssql-tools/bin/sqlcmd -S {{ mssql_host }},{{ mssql_port }} \
+              -U {{ mssql_user }} -P {{ mssql_password }} -d {{ mssql_database }} \
+              -Q "SELECT @@VERSION" -h -1 -W
+          register: auth_test
+          changed_when: false
+          no_log: true  # Don't log password
+        
+        - name: Display connectivity status
+          debug:
+            msg: "MS SQL Server connectivity test passed"
+      
+      rescue:
+        - name: Display connectivity failure
+          debug:
+            msg: "MS SQL Server connectivity test failed. Check connection parameters."
+          failed_when: true
+    
+    - name: Run InSpec compliance scan
+      shell: |
+        inspec exec {{ inspec_profile_path }} \
+          --input mssql_host={{ mssql_host }} \
+          --input mssql_port={{ mssql_port }} \
+          --input mssql_user={{ mssql_user }} \
+          --input mssql_password={{ mssql_password }} \
+          --input mssql_database={{ mssql_database }} \
+          --reporter {{ inspec_output_format }}:{{ inspec_output_dir }}/{{ compliance_report_name }}.{{ inspec_output_format }} cli
+      register: inspec_scan_result
+      changed_when: false
+      no_log: true  # Don't log password
+    
+    - name: Generate human-readable report
+      shell: |
+        inspec exec {{ inspec_profile_path }} \
+          --input mssql_host={{ mssql_host }} \
+          --input mssql_port={{ mssql_port }} \
+          --input mssql_user={{ mssql_user }} \
+          --input mssql_password={{ mssql_password }} \
+          --input mssql_database={{ mssql_database }} \
+          --reporter cli > {{ inspec_output_dir }}/{{ compliance_report_name }}.txt
+      register: inspec_report_result
+      changed_when: false
+      no_log: true
+    
+    - name: Display scan summary
+      debug:
+        msg: |
+          InSpec compliance scan completed.
+          Results saved to:
+          - JSON: {{ inspec_output_dir }}/{{ compliance_report_name }}.{{ inspec_output_format }}
+          - Text: {{ inspec_output_dir }}/{{ compliance_report_name }}.txt
+    
+    - name: Read and display compliance results summary
+      block:
+        - name: Check if results file exists
+          stat:
+            path: "{{ inspec_output_dir }}/{{ compliance_report_name }}.txt"
+          register: results_file
+        
+        - name: Display results summary
+          shell: |
+            echo "=== MS SQL Server Compliance Scan Summary ==="
+            if [ -f "{{ inspec_output_dir }}/{{ compliance_report_name }}.txt" ]; then
+              grep -E "(Profile:|Control:|✓|×|↺)" {{ inspec_output_dir }}/{{ compliance_report_name }}.txt | head -20
+              echo ""
+              echo "Full results available at: {{ inspec_output_dir }}/{{ compliance_report_name }}.txt"
+            else
+              echo "Results file not found"
+            fi
+          register: summary_output
+          changed_when: false
+          when: results_file.stat.exists
+        
+        - name: Show summary
+          debug:
+            msg: "{{ summary_output.stdout_lines }}"
+          when: results_file.stat.exists and summary_output is defined
+    
+    - name: Archive compliance results
+      archive:
+        path: "{{ inspec_output_dir }}/{{ compliance_report_name }}.*"
+        dest: "{{ inspec_output_dir }}/mssql-compliance-results-{{ ansible_date_time.date }}.tar.gz"
+        mode: '0644'
+      when: inspec_scan_result is succeeded
+    
+    - name: Set compliance scan facts
+      set_fact:
+        mssql_compliance_scan_status: "{{ 'completed' if inspec_scan_result is succeeded else 'failed' }}"
+        mssql_compliance_report_path: "{{ inspec_output_dir }}/{{ compliance_report_name }}"
+        mssql_compliance_scan_time: "{{ ansible_date_time.iso8601 }}"
+    
+    - name: Cleanup temporary files
+      file:
+        path: /tmp/install_inspec.sh
+        state: absent

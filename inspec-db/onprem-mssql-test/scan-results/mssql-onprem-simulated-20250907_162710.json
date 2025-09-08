@@ -1,0 +1,70 @@
+{
+  "version": "4.56.0",
+  "profiles": [
+    {
+      "name": "MS SQL Server Security Baseline",
+      "version": "1.0.0",
+      "sha256": "simulated",
+      "title": "MS SQL Server Security Compliance Profile",
+      "maintainer": "Security Team",
+      "summary": "InSpec profile for MS SQL Server compliance",
+      "controls": [
+        {
+          "id": "mssql-ssl-encryption",
+          "title": "MS SQL Server SSL/TLS Encryption Configuration",
+          "desc": "Verify that MS SQL Server is configured to use SSL/TLS encryption",
+          "impact": 0.8,
+          "results": [
+            {
+              "status": "failed",
+              "code_desc": "MS SQL Server should have Force Encryption enabled",
+              "message": "Force Encryption is set to 0 (disabled). Expected: 1 (enabled)"
+            }
+          ]
+        },
+        {
+          "id": "mssql-password-policy",
+          "title": "MS SQL Server Password Policy Enforcement",
+          "desc": "Verify that password policy is enforced for SQL logins",
+          "impact": 0.7,
+          "results": [
+            {
+              "status": "passed",
+              "code_desc": "Password policy should be enforced for all SQL logins",
+              "message": "Password policy is enforced for test_user"
+            }
+          ]
+        },
+        {
+          "id": "mssql-audit-enabled",
+          "title": "MS SQL Server Audit Configuration",
+          "desc": "Verify that SQL Server Audit is enabled and configured",
+          "impact": 0.7,
+          "results": [
+            {
+              "status": "passed",
+              "code_desc": "SQL Server Audit should be enabled",
+              "message": "SQL Server Audit is enabled with proper configuration"
+            }
+          ]
+        },
+        {
+          "id": "mssql-xp-cmdshell",
+          "title": "xp_cmdshell Configuration",
+          "desc": "Verify that xp_cmdshell is disabled",
+          "impact": 0.9,
+          "results": [
+            {
+              "status": "passed",
+              "code_desc": "xp_cmdshell should be disabled",
+              "message": "xp_cmdshell is disabled as required"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "statistics": {
+    "duration": 2.456
+  }
+}

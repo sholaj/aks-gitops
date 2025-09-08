@@ -1,0 +1,40 @@
+name: azure-sql-compliance
+title: Azure SQL Database Compliance Profile
+maintainer: Platform Engineering Team
+copyright: Platform Engineering Team
+copyright_email: platform-engineering@company.com
+license: Apache-2.0
+summary: InSpec compliance profile for Azure SQL Database security and best practices
+version: 1.0.0
+
+supports:
+  - platform: azure
+
+depends:
+
+inputs:
+  - name: sql_server
+    type: string
+    value: sql-compliance-test-1757256466.database.windows.net
+    description: Azure SQL Server FQDN
+
+  - name: sql_database
+    type: string
+    value: test_db
+    description: Azure SQL Database name
+
+  - name: sql_admin_user
+    type: string
+    value: sqladmin
+    description: Azure SQL Server admin username
+
+  - name: sql_admin_password
+    type: string
+    value: ComplexP@ssw0rd123!
+    description: Azure SQL Server admin password
+    sensitive: true
+
+  - name: test_user
+    type: string
+    value: test_user
+    description: Test user for compliance validation

@@ -1,0 +1,46 @@
+name: mssql-compliance
+title: MS SQL Server Compliance Profile
+maintainer: Platform Engineering Team
+copyright: Platform Engineering Team
+copyright_email: platform-engineering@company.com
+license: Apache-2.0
+summary: InSpec compliance profile for MS SQL Server security and best practices
+version: 1.0.0
+
+supports:
+  - platform-family: windows
+  - platform-family: linux
+
+depends:
+
+inputs:
+  - name: mssql_host
+    type: string
+    value: localhost
+    description: MS SQL Server hostname or IP address
+
+  - name: mssql_port
+    type: numeric
+    value: 1433
+    description: MS SQL Server port number
+
+  - name: mssql_user
+    type: string
+    value: test_user
+    description: MS SQL Server username for connection
+
+  - name: mssql_password
+    type: string
+    value: P@ssw0rd
+    description: MS SQL Server password for connection
+    sensitive: true
+
+  - name: mssql_database
+    type: string
+    value: test_db
+    description: MS SQL Server database name
+
+  - name: mssql_instance
+    type: string
+    value: MSSQLSERVER
+    description: MS SQL Server instance name

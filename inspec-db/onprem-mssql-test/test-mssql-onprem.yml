@@ -1,0 +1,191 @@
+---
+# Ansible Playbook for On-Premise MS SQL Server Compliance Testing
+# This playbook runs on the scanning machine with InSpec already installed
+
+- name: On-Premise MS SQL Server Compliance Testing
+  hosts: localhost
+  gather_facts: yes
+  become: no
+  
+  vars:
+    # MS SQL Server connection parameters
+    mssql_host: "{{ lookup('env', 'MSSQL_HOST') | default('localhost') }}"
+    mssql_port: "{{ lookup('env', 'MSSQL_PORT') | default(1433) }}"
+    mssql_user: "{{ lookup('env', 'MSSQL_USER') | default('test_user') }}"
+    mssql_password: "{{ lookup('env', 'MSSQL_PASSWORD') | default('P@ssw0rd') }}"
+    mssql_database: "{{ lookup('env', 'MSSQL_DATABASE') | default('test_db') }}"
+    
+    # InSpec configuration
+    inspec_profile_path: "../mssql/inspec-profiles"
+    scan_results_dir: "./scan-results"
+    scan_timestamp: "{{ ansible_date_time.epoch }}"
+    
+  tasks:
+    - name: Display test configuration
+      debug:
+        msg: |
+          Starting On-Premise MS SQL Server Compliance Test
+          ==================================================
+          Target: {{ mssql_host }}:{{ mssql_port }}
+          Database: {{ mssql_database }}
+          User: {{ mssql_user }}
+          InSpec Profile: {{ inspec_profile_path }}
+    
+    - name: Ensure InSpec is installed
+      command: which inspec
+      register: inspec_check
+      failed_when: false
+      changed_when: false
+    
+    - name: Verify InSpec installation
+      assert:
+        that:
+          - inspec_check.rc == 0
+        fail_msg: "InSpec is not installed. Please install InSpec before running this playbook."
+        success_msg: "✅ InSpec is installed at {{ inspec_check.stdout }}"
+    
+    - name: Create scan results directory
+      file:
+        path: "{{ scan_results_dir }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Test MS SQL Server connectivity
+      shell: |
+        /opt/mssql-tools/bin/sqlcmd -S {{ mssql_host }},{{ mssql_port }} \
+          -U {{ mssql_user }} -P '{{ mssql_password }}' -d {{ mssql_database }} \
+          -Q "SELECT 'Connected' AS Status, @@VERSION AS Version" -h -1
+      register: connection_test
+      no_log: true
+      changed_when: false
+      failed_when: connection_test.rc != 0
+    
+    - name: Display connection test result
+      debug:
+        msg: "✅ Successfully connected to MS SQL Server"
+    
+    - name: Run pre-scan security checks
+      shell: |
+        /opt/mssql-tools/bin/sqlcmd -S {{ mssql_host }},{{ mssql_port }} \
+          -U {{ mssql_user }} -P '{{ mssql_password }}' -d {{ mssql_database }} \
+          -Q "SELECT 
+                CASE WHEN CONNECTIONPROPERTY('encrypt') = 'TRUE' THEN 'ENABLED' ELSE 'DISABLED' END AS 'TLS_Encryption',
+                CASE WHEN CONNECTIONPROPERTY('protocol_type') = 'TCP' THEN 'TCP' ELSE 'OTHER' END AS 'Protocol',
+                USER_NAME() AS 'Current_User',
+                DB_NAME() AS 'Current_Database'
+              " -h -1 -W
+      register: security_check
+      no_log: true
+      changed_when: false
+    
+    - name: Display pre-scan security status
+      debug:
+        msg: |
+          Pre-Scan Security Check:
+          {{ security_check.stdout }}
+    
+    - name: Execute InSpec compliance scan
+      shell: |
+        inspec exec {{ inspec_profile_path }} \
+          --input mssql_host={{ mssql_host }} \
+          --input mssql_port={{ mssql_port }} \
+          --input mssql_user={{ mssql_user }} \
+          --input mssql_password='{{ mssql_password }}' \
+          --input mssql_database={{ mssql_database }} \
+          --reporter cli \
+          --reporter json:{{ scan_results_dir }}/mssql-onprem-{{ scan_timestamp }}.json \
+          --reporter html:{{ scan_results_dir }}/mssql-onprem-{{ scan_timestamp }}.html
+      register: inspec_scan
+      no_log: true
+      failed_when: false
+      changed_when: false
+    
+    - name: Parse scan results
+      block:
+        - name: Read JSON results
+          slurp:
+            src: "{{ scan_results_dir }}/mssql-onprem-{{ scan_timestamp }}.json"
+          register: scan_json
+        
+        - name: Parse compliance statistics
+          set_fact:
+            scan_stats: "{{ scan_json.content | b64decode | from_json }}"
+        
+        - name: Calculate compliance metrics
+          set_fact:
+            total_controls: "{{ scan_stats.profiles[0].controls | length }}"
+            passed_controls: "{{ scan_stats.profiles[0].controls | selectattr('results.0.status', 'equalto', 'passed') | list | length }}"
+            failed_controls: "{{ scan_stats.profiles[0].controls | selectattr('results.0.status', 'equalto', 'failed') | list | length }}"
+      rescue:
+        - name: Set default metrics on parse failure
+          set_fact:
+            total_controls: "N/A"
+            passed_controls: "N/A"
+            failed_controls: "N/A"
+    
+    - name: Generate compliance summary report
+      copy:
+        content: |
+          On-Premise MS SQL Server Compliance Report
+          ==========================================
+          Generated: {{ ansible_date_time.iso8601 }}
+          Scanning Host: {{ ansible_hostname }}
+          
+          Target Configuration:
+          --------------------
+          Server: {{ mssql_host }}:{{ mssql_port }}
+          Database: {{ mssql_database }}
+          User: {{ mssql_user }}
+          
+          Compliance Results:
+          ------------------
+          Total Controls: {{ total_controls }}
+          Passed: {{ passed_controls }}
+          Failed: {{ failed_controls }}
+          {% if total_controls != "N/A" and (passed_controls|int + failed_controls|int) > 0 %}
+          Success Rate: {{ ((passed_controls|int * 100) / (passed_controls|int + failed_controls|int)) | round(1) }}%
+          {% else %}
+          Success Rate: N/A
+          {% endif %}
+          
+          InSpec Exit Code: {{ inspec_scan.rc }}
+          Status: {% if inspec_scan.rc == 0 %}✅ COMPLIANT{% elif inspec_scan.rc == 100 %}⚠️  NON-COMPLIANT{% else %}❌ SCAN ERROR{% endif %}
+          
+          Output Files:
+          ------------
+          - JSON: {{ scan_results_dir }}/mssql-onprem-{{ scan_timestamp }}.json
+          - HTML: {{ scan_results_dir }}/mssql-onprem-{{ scan_timestamp }}.html
+          - Summary: {{ scan_results_dir }}/mssql-onprem-summary-{{ scan_timestamp }}.txt
+          
+          Scan Output:
+          -----------
+          {{ inspec_scan.stdout | default('No output captured') }}
+        dest: "{{ scan_results_dir }}/mssql-onprem-summary-{{ scan_timestamp }}.txt"
+        mode: '0644'
+    
+    - name: Display final compliance summary
+      debug:
+        msg: |
+          ============================================
+          MS SQL Server Compliance Scan Complete!
+          ============================================
+          
+          Results:
+          - Total Controls: {{ total_controls }}
+          - Passed: {{ passed_controls }}
+          - Failed: {{ failed_controls }}
+          {% if total_controls != "N/A" and (passed_controls|int + failed_controls|int) > 0 %}
+          - Success Rate: {{ ((passed_controls|int * 100) / (passed_controls|int + failed_controls|int)) | round(1) }}%
+          {% endif %}
+          
+          Status: {% if inspec_scan.rc == 0 %}✅ COMPLIANT{% elif inspec_scan.rc == 100 %}⚠️  NON-COMPLIANT{% else %}❌ SCAN ERROR{% endif %}
+          
+          Reports saved to: {{ scan_results_dir }}/
+          - JSON: mssql-onprem-{{ scan_timestamp }}.json
+          - HTML: mssql-onprem-{{ scan_timestamp }}.html
+          - Summary: mssql-onprem-summary-{{ scan_timestamp }}.txt
+    
+    - name: Set compliance status fact
+      set_fact:
+        compliance_status: "{% if inspec_scan.rc == 0 %}COMPLIANT{% elif inspec_scan.rc == 100 %}NON-COMPLIANT{% else %}ERROR{% endif %}"
+        scan_completed: true

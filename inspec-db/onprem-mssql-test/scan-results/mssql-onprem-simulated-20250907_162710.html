@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MS SQL Server Compliance Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        .passed { color: green; }
+        .failed { color: red; }
+        .summary { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #4CAF50; color: white; }
+    </style>
+</head>
+<body>
+    <h1>MS SQL Server Compliance Report - On-Premise</h1>
+    <div class="summary">
+        <h2>Summary</h2>
+        <p><strong>Target:</strong> localhost:1433</p>
+        <p><strong>Database:</strong> test_db</p>
+        <p><strong>Scan Date:</strong> EOF
+echo "$(date)" >> $RESULTS_DIR/mssql-onprem-simulated-$SCAN_TIMESTAMP.html
+cat >> $RESULTS_DIR/mssql-onprem-simulated-$SCAN_TIMESTAMP.html << 'EOF'
+        </p>
+        <p><strong>Total Controls:</strong> 4</p>
+        <p><strong>Passed:</strong> <span class="passed">3</span></p>
+        <p><strong>Failed:</strong> <span class="failed">1</span></p>
+        <p><strong>Success Rate:</strong> 75%</p>
+    </div>
+    
+    <h2>Control Results</h2>
+    <table>
+        <tr>
+            <th>Control ID</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Impact</th>
+        </tr>
+        <tr>
+            <td>mssql-ssl-encryption</td>
+            <td>MS SQL Server SSL/TLS Encryption Configuration</td>
+            <td class="failed">FAILED</td>
+            <td>0.8</td>
+        </tr>
+        <tr>
+            <td>mssql-password-policy</td>
+            <td>MS SQL Server Password Policy Enforcement</td>
+            <td class="passed">PASSED</td>
+            <td>0.7</td>
+        </tr>
+        <tr>
+            <td>mssql-audit-enabled</td>
+            <td>MS SQL Server Audit Configuration</td>
+            <td class="passed">PASSED</td>
+            <td>0.7</td>
+        </tr>
+        <tr>
+            <td>mssql-xp-cmdshell</td>
+            <td>xp_cmdshell Configuration</td>
+            <td class="passed">PASSED</td>
+            <td>0.9</td>
+        </tr>
+    </table>
+</body>
+</html>

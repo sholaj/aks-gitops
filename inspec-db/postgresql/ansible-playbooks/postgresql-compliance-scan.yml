@@ -1,0 +1,237 @@
+---
+- name: PostgreSQL Compliance Scanning with InSpec
+  hosts: postgresql_scanners
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # PostgreSQL connection parameters
+    pg_host: "{{ hostvars[inventory_hostname]['pg_host'] | default('localhost') }}"
+    pg_port: "{{ hostvars[inventory_hostname]['pg_port'] | default(5432) }}"
+    pg_user: "{{ hostvars[inventory_hostname]['pg_user'] | default('test_user') }}"
+    pg_password: "{{ hostvars[inventory_hostname]['pg_password'] | default('P@ssw0rd') }}"
+    pg_database: "{{ hostvars[inventory_hostname]['pg_database'] | default('test_db') }}"
+    pg_superuser: "{{ hostvars[inventory_hostname]['pg_superuser'] | default('postgres') }}"
+    pg_superuser_password: "{{ hostvars[inventory_hostname]['pg_superuser_password'] | default('P@ssw0rd123') }}"
+    
+    # InSpec configuration
+    inspec_profile_path: "/tmp/inspec-profiles/postgresql-compliance"
+    inspec_output_dir: "/tmp/inspec-results"
+    inspec_output_format: "json"
+    
+    # Compliance reporting
+    compliance_report_name: "postgresql-compliance-{{ ansible_date_time.epoch }}"
+    
+  tasks:
+    - name: Install required packages
+      package:
+        name:
+          - curl
+          - telnet
+        state: present
+      when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+    
+    - name: Install InSpec
+      block:
+        - name: Download InSpec installation script
+          get_url:
+            url: https://omnitruck.chef.io/install.sh
+            dest: /tmp/install_inspec.sh
+            mode: '0755'
+        
+        - name: Install InSpec
+          shell: /tmp/install_inspec.sh -P inspec
+          args:
+            creates: /usr/bin/inspec
+          register: inspec_install
+        
+        - name: Verify InSpec installation
+          command: inspec version
+          register: inspec_version
+          changed_when: false
+        
+        - name: Display InSpec version
+          debug:
+            msg: "InSpec version: {{ inspec_version.stdout }}"
+    
+    - name: Install PostgreSQL client tools (if not present)
+      block:
+        - name: Check if psql is available
+          command: which psql
+          register: psql_check
+          failed_when: false
+          changed_when: false
+        
+        - name: Install PostgreSQL client on Ubuntu/Debian
+          apt:
+            name: postgresql-client
+            state: present
+            update_cache: yes
+          when: ansible_os_family == "Debian" and psql_check.rc != 0
+        
+        - name: Install PostgreSQL client on RedHat/CentOS
+          yum:
+            name: postgresql
+            state: present
+          when: ansible_os_family == "RedHat" and psql_check.rc != 0
+    
+    - name: Create InSpec working directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ inspec_profile_path }}"
+        - "{{ inspec_profile_path }}/controls"
+        - "{{ inspec_output_dir }}"
+    
+    - name: Copy InSpec profile files
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: '0644'
+      loop:
+        - { src: "../inspec-profiles/inspec.yml", dest: "{{ inspec_profile_path }}/inspec.yml" }
+        - { src: "../inspec-profiles/controls/postgresql_security.rb", dest: "{{ inspec_profile_path }}/controls/postgresql_security.rb" }
+    
+    - name: Test PostgreSQL connectivity before scanning
+      block:
+        - name: Test basic connectivity
+          shell: |
+            timeout 10 bash -c "echo > /dev/tcp/{{ pg_host }}/{{ pg_port }}" || exit 1
+          register: connectivity_test
+          changed_when: false
+        
+        - name: Test PostgreSQL authentication
+          shell: |
+            PGPASSWORD={{ pg_password }} psql -h {{ pg_host }} -p {{ pg_port }} \
+              -U {{ pg_user }} -d {{ pg_database }} \
+              -c "SELECT version();" -t -A
+          register: auth_test
+          changed_when: false
+          no_log: true  # Don't log password
+        
+        - name: Display connectivity status
+          debug:
+            msg: "PostgreSQL connectivity test passed"
+      
+      rescue:
+        - name: Display connectivity failure
+          debug:
+            msg: "PostgreSQL connectivity test failed. Check connection parameters."
+          failed_when: true
+    
+    - name: Run InSpec compliance scan
+      shell: |
+        inspec exec {{ inspec_profile_path }} \
+          --input pg_host={{ pg_host }} \
+          --input pg_port={{ pg_port }} \
+          --input pg_user={{ pg_user }} \
+          --input pg_password={{ pg_password }} \
+          --input pg_database={{ pg_database }} \
+          --input pg_superuser={{ pg_superuser }} \
+          --input pg_superuser_password={{ pg_superuser_password }} \
+          --reporter {{ inspec_output_format }}:{{ inspec_output_dir }}/{{ compliance_report_name }}.{{ inspec_output_format }} cli
+      register: inspec_scan_result
+      changed_when: false
+      no_log: true  # Don't log passwords
+    
+    - name: Generate human-readable report
+      shell: |
+        inspec exec {{ inspec_profile_path }} \
+          --input pg_host={{ pg_host }} \
+          --input pg_port={{ pg_port }} \
+          --input pg_user={{ pg_user }} \
+          --input pg_password={{ pg_password }} \
+          --input pg_database={{ pg_database }} \
+          --input pg_superuser={{ pg_superuser }} \
+          --input pg_superuser_password={{ pg_superuser_password }} \
+          --reporter cli > {{ inspec_output_dir }}/{{ compliance_report_name }}.txt
+      register: inspec_report_result
+      changed_when: false
+      no_log: true
+    
+    - name: Display scan summary
+      debug:
+        msg: |
+          InSpec compliance scan completed.
+          Results saved to:
+          - JSON: {{ inspec_output_dir }}/{{ compliance_report_name }}.{{ inspec_output_format }}
+          - Text: {{ inspec_output_dir }}/{{ compliance_report_name }}.txt
+    
+    - name: Read and display compliance results summary
+      block:
+        - name: Check if results file exists
+          stat:
+            path: "{{ inspec_output_dir }}/{{ compliance_report_name }}.txt"
+          register: results_file
+        
+        - name: Display results summary
+          shell: |
+            echo "=== PostgreSQL Compliance Scan Summary ==="
+            if [ -f "{{ inspec_output_dir }}/{{ compliance_report_name }}.txt" ]; then
+              grep -E "(Profile:|Control:|✓|×|↺)" {{ inspec_output_dir }}/{{ compliance_report_name }}.txt | head -20
+              echo ""
+              echo "Full results available at: {{ inspec_output_dir }}/{{ compliance_report_name }}.txt"
+            else
+              echo "Results file not found"
+            fi
+          register: summary_output
+          changed_when: false
+          when: results_file.stat.exists
+        
+        - name: Show summary
+          debug:
+            msg: "{{ summary_output.stdout_lines }}"
+          when: results_file.stat.exists and summary_output is defined
+    
+    - name: Archive compliance results
+      archive:
+        path: "{{ inspec_output_dir }}/{{ compliance_report_name }}.*"
+        dest: "{{ inspec_output_dir }}/postgresql-compliance-results-{{ ansible_date_time.date }}.tar.gz"
+        mode: '0644'
+      when: inspec_scan_result is succeeded
+    
+    - name: Set compliance scan facts
+      set_fact:
+        postgresql_compliance_scan_status: "{{ 'completed' if inspec_scan_result is succeeded else 'failed' }}"
+        postgresql_compliance_report_path: "{{ inspec_output_dir }}/{{ compliance_report_name }}"
+        postgresql_compliance_scan_time: "{{ ansible_date_time.iso8601 }}"
+    
+    - name: Generate PostgreSQL security configuration report
+      block:
+        - name: Create security configuration report
+          shell: |
+            echo "PostgreSQL Security Configuration Report" > {{ inspec_output_dir }}/postgresql-security-config.txt
+            echo "Generated: $(date)" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            echo "=========================================" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            echo "" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            
+            echo "SSL Configuration:" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            PGPASSWORD={{ pg_superuser_password }} psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_superuser }} -d postgres \
+              -c "SELECT name, setting, short_desc FROM pg_settings WHERE name LIKE '%ssl%' ORDER BY name;" \
+              >> {{ inspec_output_dir }}/postgresql-security-config.txt 2>/dev/null || echo "SSL config query failed" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            
+            echo "" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            echo "Authentication Configuration:" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            PGPASSWORD={{ pg_superuser_password }} psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_superuser }} -d postgres \
+              -c "SELECT name, setting, short_desc FROM pg_settings WHERE name LIKE '%auth%' OR name LIKE '%password%' ORDER BY name;" \
+              >> {{ inspec_output_dir }}/postgresql-security-config.txt 2>/dev/null || echo "Auth config query failed" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            
+            echo "" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            echo "Connection Configuration:" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+            PGPASSWORD={{ pg_superuser_password }} psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_superuser }} -d postgres \
+              -c "SELECT name, setting, short_desc FROM pg_settings WHERE name IN ('listen_addresses', 'port', 'max_connections') ORDER BY name;" \
+              >> {{ inspec_output_dir }}/postgresql-security-config.txt 2>/dev/null || echo "Connection config query failed" >> {{ inspec_output_dir }}/postgresql-security-config.txt
+          register: config_report
+          changed_when: false
+          no_log: true
+        
+        - name: Display configuration report location
+          debug:
+            msg: "PostgreSQL security configuration report saved to: {{ inspec_output_dir }}/postgresql-security-config.txt"
+    
+    - name: Cleanup temporary files
+      file:
+        path: /tmp/install_inspec.sh
+        state: absent

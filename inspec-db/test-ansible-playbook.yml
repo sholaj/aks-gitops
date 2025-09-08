@@ -1,0 +1,208 @@
+---
+- name: PostgreSQL Compliance Testing - Local Execution
+  hosts: postgresql_scanners
+  gather_facts: yes
+  become: no
+  
+  vars:
+    # PostgreSQL connection parameters
+    pg_host: "{{ hostvars[inventory_hostname]['pg_host'] | default('localhost') }}"
+    pg_port: "{{ hostvars[inventory_hostname]['pg_port'] | default(5432) }}"
+    pg_user: "{{ hostvars[inventory_hostname]['pg_user'] | default('test_user') }}"
+    pg_password: "{{ hostvars[inventory_hostname]['pg_password'] | default('P@ssw0rd') }}"
+    pg_database: "{{ hostvars[inventory_hostname]['pg_database'] | default('test_db') }}"
+    
+    # InSpec configuration
+    inspec_profile_path: "{{ playbook_dir }}/postgresql/inspec-profiles"
+    inspec_output_dir: "/tmp/ansible-inspec-results"
+    inspec_output_format: "json"
+    compliance_report_name: "postgresql-compliance-{{ ansible_date_time.epoch }}"
+    
+  tasks:
+    - name: Display test information
+      debug:
+        msg: |
+          Starting PostgreSQL compliance testing
+          Target: {{ pg_host }}:{{ pg_port }}
+          Database: {{ pg_database }}
+          User: {{ pg_user }}
+    
+    - name: Check if InSpec is installed
+      command: which inspec
+      register: inspec_check
+      failed_when: false
+      changed_when: false
+    
+    - name: Install InSpec if needed (macOS)
+      block:
+        - name: Download and install InSpec
+          shell: |
+            if ! command -v inspec >/dev/null 2>&1; then
+              curl -L https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
+            fi
+          become: yes
+          when: inspec_check.rc != 0
+      rescue:
+        - name: InSpec installation failed - continuing with manual testing
+          debug:
+            msg: "InSpec installation failed, will perform manual compliance checks"
+    
+    - name: Create InSpec results directory
+      file:
+        path: "{{ inspec_output_dir }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Test PostgreSQL connection
+      block:
+        - name: Test basic connectivity
+          shell: |
+            /opt/homebrew/opt/postgresql@14/bin/psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_user }} -d {{ pg_database }} -c "SELECT 'Connection successful' as status;" 2>/dev/null
+          environment:
+            PGPASSWORD: "{{ pg_password }}"
+          register: connection_test
+          changed_when: false
+        
+        - name: Display connection test result
+          debug:
+            msg: "✅ PostgreSQL connection successful"
+          when: connection_test.rc == 0
+      
+      rescue:
+        - name: Connection failed
+          debug:
+            msg: "❌ PostgreSQL connection failed: {{ connection_test.stderr | default('Unknown error') }}"
+          failed_when: true
+    
+    - name: Manual Compliance Check 1 - SSL Configuration
+      block:
+        - name: Check SSL setting
+          shell: |
+            /opt/homebrew/opt/postgresql@14/bin/psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_user }} -d {{ pg_database }} -t -A -c "SHOW ssl;" 2>/dev/null
+          environment:
+            PGPASSWORD: "{{ pg_password }}"
+          register: ssl_check
+          changed_when: false
+        
+        - name: Evaluate SSL configuration
+          set_fact:
+            ssl_status: "{{ 'PASS' if ssl_check.stdout.strip() == 'on' else 'FAIL' }}"
+            ssl_value: "{{ ssl_check.stdout.strip() }}"
+        
+        - name: Display SSL compliance result
+          debug:
+            msg: |
+              Control: PostgreSQL SSL Configuration
+              Status: {{ ssl_status }}
+              Current Value: {{ ssl_value }}
+              Expected: on
+    
+    - name: Manual Compliance Check 2 - User Authentication
+      block:
+        - name: Test user authentication
+          shell: |
+            /opt/homebrew/opt/postgresql@14/bin/psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_user }} -d {{ pg_database }} -t -A -c "SELECT current_user;" 2>/dev/null
+          environment:
+            PGPASSWORD: "{{ pg_password }}"
+          register: auth_check
+          changed_when: false
+        
+        - name: Evaluate authentication
+          set_fact:
+            auth_status: "{{ 'PASS' if pg_user in auth_check.stdout else 'FAIL' }}"
+            auth_user: "{{ auth_check.stdout.strip() }}"
+        
+        - name: Display authentication compliance result
+          debug:
+            msg: |
+              Control: User Authentication Test  
+              Status: {{ auth_status }}
+              Authenticated User: {{ auth_user }}
+              Expected User: {{ pg_user }}
+    
+    - name: Manual Compliance Check 3 - Data Access Validation
+      block:
+        - name: Test data access
+          shell: |
+            /opt/homebrew/opt/postgresql@14/bin/psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_user }} -d {{ pg_database }} -t -A -c "SELECT COUNT(*) FROM sample_table;" 2>/dev/null
+          environment:
+            PGPASSWORD: "{{ pg_password }}"
+          register: data_check
+          changed_when: false
+        
+        - name: Evaluate data access
+          set_fact:
+            data_status: "{{ 'PASS' if (data_check.stdout.strip() | int) >= 2 else 'FAIL' }}"
+            data_count: "{{ data_check.stdout.strip() }}"
+        
+        - name: Display data access compliance result
+          debug:
+            msg: |
+              Control: Data Access Validation
+              Status: {{ data_status }}
+              Record Count: {{ data_count }}
+              Expected: >= 2 records
+    
+    - name: Manual Compliance Check 4 - Database Version
+      block:
+        - name: Check database version
+          shell: |
+            /opt/homebrew/opt/postgresql@14/bin/psql -h {{ pg_host }} -p {{ pg_port }} -U {{ pg_user }} -d {{ pg_database }} -t -A -c "SELECT version();" 2>/dev/null
+          environment:
+            PGPASSWORD: "{{ pg_password }}"
+          register: version_check
+          changed_when: false
+        
+        - name: Evaluate version check
+          set_fact:
+            version_status: "{{ 'PASS' if 'PostgreSQL' in version_check.stdout else 'FAIL' }}"
+            db_version: "{{ version_check.stdout.strip() }}"
+        
+        - name: Display version compliance result
+          debug:
+            msg: |
+              Control: Database Version Validation
+              Status: {{ version_status }}
+              Version: {{ db_version | regex_replace('^([^,]+).*', '\\1') }}
+    
+    - name: Generate compliance summary report
+      template:
+        content: |
+          PostgreSQL Compliance Test Report
+          =================================
+          Generated: {{ ansible_date_time.iso8601 }}
+          Target: {{ pg_host }}:{{ pg_port }}
+          Database: {{ pg_database }}
+          
+          Control Results:
+          ---------------
+          1. SSL Configuration: {{ ssl_status | default('N/A') }} ({{ ssl_value | default('N/A') }})
+          2. User Authentication: {{ auth_status | default('N/A') }} ({{ auth_user | default('N/A') }})
+          3. Data Access: {{ data_status | default('N/A') }} ({{ data_count | default('N/A') }} records)
+          4. Database Version: {{ version_status | default('N/A') }}
+          
+          Summary:
+          --------
+          Total Controls: 4
+          Passed: {{ [ssl_status, auth_status, data_status, version_status] | select('equalto', 'PASS') | list | length }}
+          Failed: {{ [ssl_status, auth_status, data_status, version_status] | select('equalto', 'FAIL') | list | length }}
+          
+          Overall Status: {{ 'COMPLIANT' if ([ssl_status, auth_status, data_status, version_status] | select('equalto', 'FAIL') | list | length) == 0 else 'NON-COMPLIANT' }}
+        dest: "{{ inspec_output_dir }}/{{ compliance_report_name }}.txt"
+        mode: '0644'
+    
+    - name: Display final compliance summary
+      debug:
+        msg: |
+          🎯 POSTGRESQL COMPLIANCE TEST COMPLETED
+          ======================================
+          
+          Results Summary:
+          - SSL Configuration: {{ ssl_status | default('N/A') }}
+          - User Authentication: {{ auth_status | default('N/A') }}
+          - Data Access: {{ data_status | default('N/A') }}
+          - Database Version: {{ version_status | default('N/A') }}
+          
+          Report Location: {{ inspec_output_dir }}/{{ compliance_report_name }}.txt
+          
+          ✅ Ansible playbook execution successful!
