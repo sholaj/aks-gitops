@@ -3,7 +3,7 @@
 # Tests in-place pod resize using the resize subresource
 # Based on LinkedIn article validation
 
-set -euo pipefail
+set -xuo pipefail
 
 # Configuration
 TEST_NAMESPACE="aks-133-resize-v2"
