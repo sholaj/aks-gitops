@@ -1,27 +1,20 @@
 -----
 
-- name: Test MSSQL Database Connection and Execute InSpec Control
+- name: Minimal MSSQL Connection and InSpec Test
   hosts: localhost
   gather_facts: yes
   vars:
   
-  # MSSQL Connection Parameters - FROM PROVIDED TEST ENVIRONMENT
+  # MSSQL Connection Parameters
   
-  mssql_server: “JABDWYCO716”  # Or use IP: 10.103.226.88
+  mssql_server: “JABDWYCO716”
   mssql_port: 1733
   mssql_database: “Server_Guru”
-  mssql_username: “{{ ansible_user_id }}”  # Will use current logged-in user for Windows auth
-  mssql_password: “”  # Empty for Windows authentication
   
-  # Environment Configuration
+  # Test Configuration
   
-  environment_vars:
-  PATH: “/usr/local/oracle/NIST_FILES/mssql-tools/bin:{{ ansible_env.PATH }}”
-  LD_LIBRARY_PATH: “/usr/local/ccms/lib”
-  
-  # Test Results Storage
-  
-  test_results_dir: “/tmp/mssql_nist_test_{{ ansible_date_time.epoch }}”
+  test_results_dir: “/tmp/mssql_test_{{ ansible_date_time.epoch }}”
+  inspec_profile: “./mssql_basic_test.rb”
   
   tasks:
   - name: Create test results directory
@@ -29,281 +22,67 @@
     path: “{{ test_results_dir }}”
     state: directory
     mode: ‘0755’
-  - name: Display connection parameters (Windows Authentication)
+  - name: Display test configuration
     debug:
     msg: |
-    Testing MSSQL Connection (Windows Authentication):
-    Server: {{ mssql_server }} (JABDWYCO716)
-    IP: 10.103.226.88
-    Port: {{ mssql_port }}
+    MSSQL Test Configuration:
+    Server: {{ mssql_server }}:{{ mssql_port }}
     Database: {{ mssql_database }}
-    Authentication: Windows Authentication (-E flag)
-    Current User: {{ ansible_user_id }}
-  - name: Validate network connectivity with telnet
+    Authentication: Windows (-E)
+    InSpec Profile: {{ inspec_profile }}
+  - name: Test network connectivity
     shell: |
-    timeout 10 telnet {{ mssql_server }} {{ mssql_port }} 2>&1 | grep -E “(Connected|Escape character)” || echo “CONNECTION_FAILED”
-    register: telnet_test
+    timeout 10 telnet {{ mssql_server }} {{ mssql_port }} 2>&1 | grep -E “(Connected|Escape character)” || echo “FAILED”
+    register: network_test
     failed_when: false
     changed_when: false
-  - name: Evaluate telnet connectivity results
+  - name: Evaluate network connectivity
     set_fact:
-    network_connectivity: “{{ ‘Connected’ in telnet_test.stdout or ‘Escape character’ in telnet_test.stdout }}”
-  - name: Display network connectivity test results
-    debug:
-    msg: |
-    === Network Connectivity Test Results ===
-    Status: {{ ‘SUCCESS’ if network_connectivity else ‘FAILED’ }}
-    Target: {{ mssql_server }}:{{ mssql_port }}
-    {% if network_connectivity %}
-    Result: Network connection established successfully
-    {% else %}
-    Result: Unable to establish network connection
-    Telnet Output: {{ telnet_test.stdout }}
-    {% endif %}
-  - name: Stop execution if network connectivity failed
-    fail:
-    msg: |
-    Network connectivity test failed to {{ mssql_server }}:{{ mssql_port }}.
-    
-    ```
-    Troubleshooting steps:
-    1. Verify server hostname/IP is correct: {{ mssql_server }}
-    2. Verify port number is correct: {{ mssql_port }}
-    3. Check if firewall is blocking the connection
-    4. Confirm the MSSQL server is running and accepting connections
-    5. Test manually: telnet {{ mssql_server }} {{ mssql_port }}
-    ```
-    
-    when: not network_connectivity
-  - name: Test basic MSSQL connectivity with sqlcmd (Windows Authentication)
+    network_ok: “{{ ‘Connected’ in network_test.stdout or ‘Escape character’ in network_test.stdout }}”
+  - name: Test basic database connection
     shell: |
-    sqlcmd -S {{ mssql_server }},{{ mssql_port }} -d {{ mssql_database }} -E -Q “SELECT ‘MSSQL_CONNECTION_SUCCESS’ as connection_test, GETDATE() as current_time, @@VERSION as version_info”
-    environment: “{{ environment_vars }}”
-    register: mssql_connection_test
+    sqlcmd -S {{ mssql_server }},{{ mssql_port }} -d {{ mssql_database }} -E -Q “SELECT ‘CONNECTION_SUCCESS’ as result” -h-1
+    register: db_test
     failed_when: false
     changed_when: false
-  - name: Evaluate connection test results
+    when: network_ok
+  - name: Evaluate database connectivity
     set_fact:
-    connection_successful: “{{ mssql_connection_test.rc == 0 and ‘MSSQL_CONNECTION_SUCCESS’ in mssql_connection_test.stdout }}”
-  - name: Display connection test results
-    debug:
-    msg: |
-    === MSSQL Connection Test Results ===
-    Status: {{ ‘SUCCESS’ if connection_successful else ‘FAILED’ }}
-    Return Code: {{ mssql_connection_test.rc }}
-    {% if connection_successful %}
-    Connection Output: {{ mssql_connection_test.stdout }}
-    {% else %}
-    Error Output: {{ mssql_connection_test.stderr }}
-    {% endif %}
-  - name: Stop execution if connection failed
-    fail:
-    msg: “MSSQL connection test failed. Cannot proceed with InSpec testing.”
-    when: not connection_successful
-  - name: Create basic MSSQL InSpec profile for testing
-    copy:
-    content: |
-    # Basic MSSQL InSpec Control for Testing with Windows Authentication
-    control ‘mssql-connection-test’ do
-    impact 1.0
-    title ‘Test MSSQL Database Connectivity and Basic Configuration’
-    desc ‘Verify that the MSSQL database is accessible and retrieve basic configuration information’
-    
-    ```
-      describe command("sqlcmd -S {{ mssql_server }},{{ mssql_port }} -d {{ mssql_database }} -E -Q \"SELECT 'InSpec_Test_Success' as test_result\"") do
-        its('exit_status') { should eq 0 }
-        its('stdout') { should match /InSpec_Test_Success/ }
-      end
-      
-      describe command("sqlcmd -S {{ mssql_server }},{{ mssql_port }} -d {{ mssql_database }} -E -Q \"SELECT name FROM sys.databases WHERE name = '{{ mssql_database }}'\"") do
-        its('exit_status') { should eq 0 }
-        its('stdout') { should match /{{ mssql_database }}/ }
-      end
-    end
-    
-    control 'mssql-version-check' do
-      impact 0.7
-      title 'Check MSSQL Server Version'
-      desc 'Retrieve and validate MSSQL server version information'
-      
-      describe command("sqlcmd -S {{ mssql_server }},{{ mssql_port }} -d {{ mssql_database }} -E -Q \"SELECT @@VERSION as version\"") do
-        its('exit_status') { should eq 0 }
-        its('stdout') { should match /Microsoft SQL Server/ }
-      end
-    end
-    
-    control 'mssql-basic-security-check' do
-      impact 0.8
-      title 'Basic MSSQL Security Configuration Check'
-      desc 'Check basic security settings like authentication mode'
-      
-      describe command("sqlcmd -S {{ mssql_server }},{{ mssql_port }} -d {{ mssql_database }} -E -Q \"SELECT SERVERPROPERTY('IsIntegratedSecurityOnly') as auth_mode\"") do
-        its('exit_status') { should eq 0 }
-      end
-    end
-    ```
-    
-    dest: “{{ test_results_dir }}/basic_mssql_test.rb”
-    mode: ‘0644’
-  - name: Execute InSpec profile against MSSQL database
+    db_ok: “{{ db_test.rc == 0 and ‘CONNECTION_SUCCESS’ in db_test.stdout }}”
+    when: network_ok
+  - name: Execute InSpec profile
     shell: |
-    /usr/bin/inspec exec {{ test_results_dir }}/basic_mssql_test.rb   
-    –reporter=json-min   
-    –no-color   
-    2>/dev/null
-    environment: “{{ environment_vars }}”
-    register: inspec_execution
+    /usr/bin/inspec exec {{ inspec_profile }}   
+    –input server={{ mssql_server }} port={{ mssql_port }} database={{ mssql_database }}   
+    –reporter=json   
+    –no-color
+    register: inspec_result
     failed_when: false
     changed_when: false
-  - name: Save InSpec raw output
+    when: network_ok and db_ok
+  - name: Save InSpec results
     copy:
-    content: “{{ inspec_execution.stdout }}”
-    dest: “{{ test_results_dir }}/inspec_raw_output.json”
-  - name: Parse InSpec results
-    set_fact:
-    inspec_json: “{{ inspec_execution.stdout | from_json }}”
-    when: inspec_execution.rc == 0 and inspec_execution.stdout | length > 0
-  - name: Analyze InSpec results
-    set_fact:
-    inspec_summary:
-    total_controls: “{{ inspec_json.controls | length if inspec_json is defined and inspec_json.controls is defined else 0 }}”
-    passed_controls: “{{ inspec_json.controls | selectattr(‘status’, ‘equalto’, ‘passed’) | list | length if inspec_json is defined and inspec_json.controls is defined else 0 }}”
-    failed_controls: “{{ inspec_json.controls | selectattr(‘status’, ‘equalto’, ‘failed’) | list | length if inspec_json is defined and inspec_json.controls is defined else 0 }}”
-    execution_successful: “{{ inspec_execution.rc == 0 }}”
-    when: inspec_json is defined
-  - name: Display InSpec execution results
+    content: “{{ inspec_result.stdout }}”
+    dest: “{{ test_results_dir }}/inspec_results.json”
+    when: inspec_result is defined and inspec_result.stdout != “”
+  - name: Display test results
     debug:
     msg: |
-    === InSpec Execution Results ===
-    {% if inspec_summary is defined %}
-    Execution Status: {{ ‘SUCCESS’ if inspec_summary.execution_successful else ‘FAILED’ }}
-    Total Controls: {{ inspec_summary.total_controls }}
-    Passed Controls: {{ inspec_summary.passed_controls }}
-    Failed Controls: {{ inspec_summary.failed_controls }}
-    Success Rate: {{ ((inspec_summary.passed_controls | int) / (inspec_summary.total_controls | int) * 100) | round(1) if inspec_summary.total_controls | int > 0 else 0 }}%
-    {% else %}
-    Execution Status: FAILED
-    Error: {{ inspec_execution.stderr }}
-    Return Code: {{ inspec_execution.rc }}
-    {% endif %}
-  - name: Generate formatted compliance report
-    copy:
-    content: |
-    {
-    “test_summary”: {
-    “timestamp”: “{{ ansible_date_time.iso8601 }}”,
-    “database_type”: “MSSQL”,
-    “server”: “{{ mssql_server }}:{{ mssql_port }}”,
-    “database”: “{{ mssql_database }}”,
-    “network_connectivity”: “{{ ‘PASSED’ if network_connectivity else ‘FAILED’ }}”,
-    “connection_test”: “{{ ‘PASSED’ if connection_successful else ‘FAILED’ }}”,
-    {% if inspec_summary is defined %}
-    “inspec_execution”: “{{ ‘PASSED’ if inspec_summary.execution_successful else ‘FAILED’ }}”,
-    “total_controls”: {{ inspec_summary.total_controls }},
-    “passed_controls”: {{ inspec_summary.passed_controls }},
-    “failed_controls”: {{ inspec_summary.failed_controls }},
-    “success_rate”: {{ ((inspec_summary.passed_controls | int) / (inspec_summary.total_controls | int) * 100) | round(1) if inspec_summary.total_controls | int > 0 else 0 }}
-    {% else %}
-    “inspec_execution”: “FAILED”,
-    “error_message”: “InSpec execution failed or produced no valid output”
-    {% endif %}
-    },
-    {% if inspec_json is defined %}
-    “detailed_results”: {{ inspec_json | to_json }}
-    {% else %}
-    “detailed_results”: null
-    {% endif %}
-    }
-    dest: “{{ test_results_dir }}/mssql_compliance_test_report.json”
-  - name: Create simple InSpec profile for future use
-    copy:
-    content: |
-    name: mssql-basic-compliance
-    title: Basic MSSQL Compliance Checks
-    maintainer: DevOps Team
-    copyright: Your Organization
-    license: Internal Use
-    summary: Basic MSSQL database compliance verification
-    version: 1.0.0
+    === Test Results Summary ===
+    Network Connectivity: {{ ‘PASS’ if network_ok else ‘FAIL’ }}
+    Database Connection: {{ ‘PASS’ if (db_ok | default(false)) else ‘FAIL’ }}
+    InSpec Execution: {{ ‘PASS’ if (inspec_result.rc | default(1)) == 0 else ‘FAIL’ }}
     
     ```
-    depends:
+    Results saved to: {{ test_results_dir }}/
     
-    supports:
-      platform: os
-    ```
-    
-    dest: “{{ test_results_dir }}/inspec.yml”
-  - name: Display final test summary
-    debug:
-    msg: |
-    === FINAL TEST SUMMARY ===
-    
-    ```
-    ✓ Network Connectivity: {{ 'SUCCESSFUL' if network_connectivity else 'FAILED' }}
-    ✓ MSSQL Connection: {{ 'SUCCESSFUL' if connection_successful else 'FAILED' }}
-    {% if inspec_summary is defined %}
-    ✓ InSpec Execution: {{ 'SUCCESSFUL' if inspec_summary.execution_successful else 'FAILED' }}
-    ✓ Controls Passed: {{ inspec_summary.passed_controls }}/{{ inspec_summary.total_controls }}
+    {% if not network_ok %}
+    NEXT: Check network connectivity - see troubleshooting guide
+    {% elif not (db_ok | default(false)) %}
+    NEXT: Check database connection - see troubleshooting guide  
+    {% elif (inspec_result.rc | default(1)) != 0 %}
+    NEXT: Check InSpec setup - see troubleshooting guide
     {% else %}
-    ✗ InSpec Execution: FAILED
-    {% endif %}
-    
-    📁 Test Results Location: {{ test_results_dir }}
-    📋 Compliance Report: {{ test_results_dir }}/mssql_compliance_test_report.json
-    🔧 InSpec Profile: {{ test_results_dir }}/basic_mssql_test.rb
-    
-    Next Steps:
-    {% if network_connectivity and connection_successful and inspec_summary is defined and inspec_summary.execution_successful %}
-    1. Review the compliance report for detailed results
-    2. Customize the InSpec profile for your specific NIST requirements
-    3. Integrate with your existing InSpec profile directory structure
-    4. Test with Cloakware password integration (if available)
-    {% else %}
-    {% if not network_connectivity %}
-    1. Verify network connectivity: telnet {{ mssql_server }} {{ mssql_port }}
-    2. Check firewall rules and network configuration
-    3. Confirm MSSQL server is running and accepting connections
-    {% elif not connection_successful %}
-    1. Network connectivity is OK, but database connection failed
-    2. Verify service account credentials and permissions
-    3. Check if SQL Server authentication is enabled
-    4. Validate database name and server configuration
-    {% else %}
-    1. Connection tests passed but InSpec execution failed
-    2. Check InSpec installation and Ruby profile syntax
-    3. Review detailed error output for specific issues
-    {% endif %}
+    SUCCESS: All tests passed
     {% endif %}
     ```
-  - name: Provide troubleshooting information (when tests fail)
-    debug:
-    msg: |
-    === TROUBLESHOOTING GUIDE ===
-    
-    ```
-    Common Issues and Solutions:
-    
-    1. Connection Failures:
-       - Verify server name and port: {{ mssql_server }}:{{ mssql_port }}
-       - Check firewall rules allowing connectivity to MSSQL server
-       - Validate service account credentials
-       - Test basic telnet: telnet {{ mssql_server }} {{ mssql_port }}
-    
-    2. sqlcmd Command Not Found:
-       - Install MSSQL tools: sudo yum install mssql-tools
-       - Update PATH to include /opt/mssql-tools/bin
-       - Verify installation: which sqlcmd
-    
-    3. Authentication Errors:
-       - Verify username and password are correct
-       - Check if account is locked or disabled
-       - Ensure account has connect permissions to the database
-    
-    4. InSpec Execution Issues:
-       - Verify InSpec installation: /usr/bin/inspec --version
-       - Check Ruby profile syntax: /usr/bin/inspec check {{ test_results_dir }}/basic_mssql_test.rb
-       - Review detailed error output in: {{ test_results_dir }}/inspec_raw_output.json
-    ```
-    
-    when: not connection_successful or (inspec_summary is defined and not inspec_summary.execution_successful)
