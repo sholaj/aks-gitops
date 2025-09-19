@@ -1,0 +1,200 @@
+---
+- name: Execute InSpec MSSQL Controls via Ansible
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # InSpec execution parameters
+    inspec_profile: "./hari_trusted.rb"  # Path to your InSpec profile
+    mssql_server: "GDCIWVC0007"
+    mssql_port: 1733
+    mssql_username: "ps82789"
+    mssql_password: "{{ vault_mssql_password | default('$myPWD') }}"  # Use Ansible Vault in production
+    
+    # Results and logging
+    results_dir: "/tmp/inspec_mssql_{{ ansible_date_time.epoch }}"
+    
+  tasks:
+    - name: Create results directory
+      file:
+        path: "{{ results_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Display test configuration
+      debug:
+        msg: |
+          InSpec MSSQL Test Configuration:
+          Profile: {{ inspec_profile }}
+          Server: {{ mssql_server }}:{{ mssql_port }}
+          Username: {{ mssql_username }}
+          Password: [MASKED]
+          Results: {{ results_dir }}
+
+    - name: Check if InSpec profile exists
+      stat:
+        path: "{{ inspec_profile }}"
+      register: profile_check
+
+    - name: Fail if profile doesn't exist
+      fail:
+        msg: "InSpec profile not found: {{ inspec_profile }}"
+      when: not profile_check.stat.exists
+
+    - name: Execute InSpec MSSQL controls
+      shell: |
+        inspec exec {{ inspec_profile }} \
+          -t winrm://{{ mssql_server }}:{{ mssql_port }} \
+          --user {{ mssql_username }} \
+          --password {{ mssql_password }} \
+          --reporter json:{{ results_dir }}/inspec_results.json \
+          --reporter cli \
+          --no-color
+      register: inspec_execution
+      failed_when: false
+      changed_when: false
+      environment:
+        PATH: "/usr/bin:/usr/local/bin:{{ ansible_env.PATH }}"
+
+    - name: Parse InSpec results
+      slurp:
+        src: "{{ results_dir }}/inspec_results.json"
+      register: inspec_results_raw
+      when: inspec_execution.rc in [0, 1, 100, 101]  # InSpec returns different codes for pass/fail/error
+
+    - name: Process InSpec JSON results
+      set_fact:
+        inspec_data: "{{ inspec_results_raw.content | b64decode | from_json }}"
+      when: inspec_results_raw is defined
+
+    - name: Calculate test statistics
+      set_fact:
+        test_stats:
+          total_controls: "{{ inspec_data.profiles[0].controls | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          passed_controls: "{{ inspec_data.profiles[0].controls | selectattr('status', 'equalto', 'passed') | list | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          failed_controls: "{{ inspec_data.profiles[0].controls | selectattr('status', 'equalto', 'failed') | list | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          skipped_controls: "{{ inspec_data.profiles[0].controls | selectattr('status', 'equalto', 'skipped') | list | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          execution_time: "{{ inspec_data.statistics.duration if inspec_data is defined and inspec_data.statistics is defined else 0 }}"
+      when: inspec_data is defined
+
+    - name: Display execution results
+      debug:
+        msg: |
+          === InSpec MSSQL Test Results ===
+          Execution Status: {{ 'SUCCESS' if inspec_execution.rc == 0 else 'COMPLETED WITH FAILURES' if inspec_execution.rc in [1, 100] else 'EXECUTION ERROR' }}
+          Return Code: {{ inspec_execution.rc }}
+          {% if test_stats is defined %}
+          
+          Control Statistics:
+          - Total Controls: {{ test_stats.total_controls }}
+          - Passed: {{ test_stats.passed_controls }}
+          - Failed: {{ test_stats.failed_controls }}
+          - Skipped: {{ test_stats.skipped_controls }}
+          - Success Rate: {{ ((test_stats.passed_controls | int) / (test_stats.total_controls | int) * 100) | round(1) if test_stats.total_controls | int > 0 else 0 }}%
+          - Execution Time: {{ test_stats.execution_time }}s
+          {% endif %}
+          
+          Results Location: {{ results_dir }}
+
+    - name: Show failed controls details
+      debug:
+        msg: |
+          === Failed Controls Details ===
+          {% for control in inspec_data.profiles[0].controls %}
+          {% if control.status == 'failed' %}
+          Control ID: {{ control.id }}
+          Title: {{ control.title }}
+          Impact: {{ control.impact }}
+          {% for result in control.results %}
+          {% if result.status == 'failed' %}
+          - Failure: {{ result.code_desc }}
+          - Message: {{ result.message | default('No message') }}
+          {% endif %}
+          {% endfor %}
+          
+          {% endif %}
+          {% endfor %}
+      when: inspec_data is defined and test_stats.failed_controls | int > 0
+
+    - name: Generate summary report
+      copy:
+        content: |
+          {
+            "test_summary": {
+              "timestamp": "{{ ansible_date_time.iso8601 }}",
+              "profile": "{{ inspec_profile }}",
+              "target": "{{ mssql_server }}:{{ mssql_port }}",
+              "execution_status": "{{ 'SUCCESS' if inspec_execution.rc == 0 else 'FAILED' }}",
+              "return_code": {{ inspec_execution.rc }},
+              {% if test_stats is defined %}
+              "statistics": {
+                "total_controls": {{ test_stats.total_controls }},
+                "passed_controls": {{ test_stats.passed_controls }},
+                "failed_controls": {{ test_stats.failed_controls }},
+                "skipped_controls": {{ test_stats.skipped_controls }},
+                "success_rate": {{ ((test_stats.passed_controls | int) / (test_stats.total_controls | int) * 100) | round(1) if test_stats.total_controls | int > 0 else 0 }},
+                "execution_time": {{ test_stats.execution_time }}
+              }
+              {% else %}
+              "statistics": null
+              {% endif %}
+            },
+            {% if inspec_data is defined %}
+            "detailed_results": {{ inspec_data | to_json }}
+            {% else %}
+            "detailed_results": null,
+            "error_output": {{ inspec_execution.stderr | to_json }}
+            {% endif %}
+          }
+        dest: "{{ results_dir }}/test_summary.json"
+
+    - name: Display final summary
+      debug:
+        msg: |
+          === Final Test Summary ===
+          Profile Executed: {{ inspec_profile }}
+          Target: {{ mssql_server }}:{{ mssql_port }}
+          Overall Status: {{ 'PASS' if inspec_execution.rc == 0 else 'FAIL' }}
+          
+          Files Generated:
+          - InSpec Results: {{ results_dir }}/inspec_results.json
+          - Test Summary: {{ results_dir }}/test_summary.json
+          
+          {% if inspec_execution.rc == 0 %}
+          SUCCESS: All controls passed
+          {% elif inspec_execution.rc in [1, 100] %}
+          PARTIAL: Some controls failed - review failed controls above
+          {% else %}
+          ERROR: InSpec execution failed - check stderr output:
+          {{ inspec_execution.stderr }}
+          {% endif %}
+
+    - name: Provide troubleshooting guidance on failure
+      debug:
+        msg: |
+          === Troubleshooting Guidance ===
+          
+          {% if inspec_execution.rc == 2 %}
+          Error Code 2: Profile load error
+          - Check profile syntax: inspec check {{ inspec_profile }}
+          - Verify profile dependencies
+          - Check file permissions
+          {% elif inspec_execution.rc == 3 %}
+          Error Code 3: Connection error
+          - Verify WinRM connectivity to {{ mssql_server }}:{{ mssql_port }}
+          - Check credentials: {{ mssql_username }}
+          - Test manual connection: winrs -r:{{ mssql_server }} -u:{{ mssql_username }} cmd
+          {% elif inspec_execution.rc in [1, 100, 101] %}
+          Control Failures: Review failed controls above
+          - Check database permissions for {{ mssql_username }}
+          - Verify SQL queries in the controls are valid
+          - Consider database-specific configuration requirements
+          {% else %}
+          Unknown Error: Return code {{ inspec_execution.rc }}
+          - Check InSpec installation: inspec --version
+          - Review full error output in results directory
+          - Consult InSpec documentation for return code meanings
+          {% endif %}
+          
+          Manual test command:
+          inspec exec {{ inspec_profile }} -t winrm://{{ mssql_server }}:{{ mssql_port }} --user {{ mssql_username }} --password [PASSWORD]
+      when: inspec_execution.rc != 0

@@ -1,0 +1,432 @@
+---
+# MSSQL Basic Connectivity and Compliance Check
+# Purpose: Systematic MSSQL connection testing with multiple authentication methods
+# Author: DevOps Team
+# Version: 1.0
+
+- name: MSSQL Basic Connectivity and Compliance Check
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # Parameterized connection details (override via extra-vars or inventory)
+    mssql_server: "{{ mssql_server | default('your-server.domain.com') }}"
+    mssql_port: "{{ mssql_port | default(1433) }}"
+    mssql_database: "{{ mssql_database | default('master') }}"
+    mssql_username: "{{ mssql_username | default('') }}"
+    mssql_password: "{{ mssql_password | default('') }}"
+    auth_method: "{{ auth_method | default('auto') }}"  # auto, windows, sql
+    ssl_mode: "{{ ssl_mode | default('trust') }}"  # trust, verify, disable
+    connection_timeout: "{{ connection_timeout | default(30) }}"
+    inspec_profile_path: "{{ inspec_profile_path | default('./mssql/inspec-profiles') }}"
+    results_dir: "{{ results_dir | default('/tmp/mssql_compliance') }}"
+    verbose_output: "{{ verbose_output | default(false) }}"
+
+  tasks:
+    # ==================== Setup and Preparation ====================
+    - name: Create results directory
+      file:
+        path: "{{ results_dir }}"
+        state: directory
+        mode: '0755'
+      tags: [setup]
+
+    - name: Set test timestamp
+      set_fact:
+        test_timestamp: "{{ ansible_date_time.epoch }}"
+        test_datetime: "{{ ansible_date_time.iso8601 }}"
+      tags: [setup]
+
+    - name: Initialize test results structure
+      set_fact:
+        test_results:
+          timestamp: "{{ test_datetime }}"
+          database_type: "MSSQL"
+          server: "{{ mssql_server }}:{{ mssql_port }}"
+          database: "{{ mssql_database }}"
+          tests_performed:
+            network_connectivity: "NOT_TESTED"
+            authentication: "NOT_TESTED"
+            database_access: "NOT_TESTED"
+            inspec_execution: "NOT_TESTED"
+          authentication_method_used: "none"
+          errors: []
+          troubleshooting_guidance: []
+      tags: [setup]
+
+    # ==================== Network Connectivity Testing ====================
+    - name: Test network connectivity to MSSQL server
+      wait_for:
+        host: "{{ mssql_server }}"
+        port: "{{ mssql_port }}"
+        timeout: "{{ connection_timeout }}"
+        state: started
+        delay: 1
+      register: network_test
+      ignore_errors: yes
+      tags: [network]
+
+    - name: Update network connectivity test result
+      set_fact:
+        test_results: "{{ test_results | combine({'tests_performed': test_results.tests_performed | combine({'network_connectivity': 'PASS' if network_test.failed == false else 'FAIL'})}) }}"
+      tags: [network]
+
+    - name: Add network troubleshooting guidance if failed
+      set_fact:
+        test_results: "{{ test_results | combine({'troubleshooting_guidance': test_results.troubleshooting_guidance + ['Network connectivity failed. Check: 1) Server name/IP is correct, 2) Port {{ mssql_port }} is open, 3) Firewall rules allow connection, 4) DNS resolution works']}) }}"
+      when: network_test.failed
+      tags: [network]
+
+    - name: Fail if network connectivity test failed
+      fail:
+        msg: "Cannot connect to {{ mssql_server }}:{{ mssql_port }}. Please check network connectivity and firewall rules."
+      when: network_test.failed and not ignore_errors | default(false)
+      tags: [network]
+
+    # ==================== sqlcmd Tool Verification ====================
+    - name: Check if sqlcmd is installed
+      command: which sqlcmd
+      register: sqlcmd_check
+      changed_when: false
+      failed_when: false
+      tags: [tools]
+
+    - name: Get sqlcmd version if installed
+      command: sqlcmd -?
+      register: sqlcmd_version
+      changed_when: false
+      failed_when: false
+      when: sqlcmd_check.rc == 0
+      tags: [tools]
+
+    - name: Fail if sqlcmd is not installed
+      fail:
+        msg: "sqlcmd is not installed. Please install Microsoft ODBC Driver and sqlcmd tools."
+      when: sqlcmd_check.rc != 0
+      tags: [tools]
+
+    # ==================== Authentication Testing ====================
+    - name: Determine authentication method
+      block:
+        - name: Try Windows Authentication first (if auth_method is auto or windows)
+          shell: |
+            sqlcmd -S "{{ mssql_server }},{{ mssql_port }}" \
+                   -d "{{ mssql_database }}" \
+                   -E \
+                   -C \
+                   -l {{ connection_timeout }} \
+                   -Q "SELECT @@VERSION, SYSTEM_USER, DB_NAME() as CurrentDB" \
+                   -h -1 \
+                   -W
+          register: windows_auth_test
+          changed_when: false
+          failed_when: false
+          when: auth_method in ['auto', 'windows']
+          tags: [auth]
+
+        - name: Set Windows auth success
+          set_fact:
+            auth_success: true
+            auth_method_used: "windows"
+            auth_output: "{{ windows_auth_test.stdout }}"
+          when:
+            - auth_method in ['auto', 'windows']
+            - windows_auth_test.rc == 0
+          tags: [auth]
+
+        - name: Try SQL Server Authentication (if Windows auth failed or auth_method is sql)
+          shell: |
+            sqlcmd -S "{{ mssql_server }},{{ mssql_port }}" \
+                   -d "{{ mssql_database }}" \
+                   -U "{{ mssql_username }}" \
+                   -P "{{ mssql_password }}" \
+                   -C \
+                   -l {{ connection_timeout }} \
+                   -Q "SELECT @@VERSION, SYSTEM_USER, DB_NAME() as CurrentDB" \
+                   -h -1 \
+                   -W
+          register: sql_auth_test
+          changed_when: false
+          failed_when: false
+          when:
+            - (auth_method in ['auto', 'sql']) or (windows_auth_test is defined and windows_auth_test.rc != 0)
+            - mssql_username | length > 0
+            - mssql_password | length > 0
+          no_log: "{{ not verbose_output }}"
+          tags: [auth]
+
+        - name: Set SQL auth success
+          set_fact:
+            auth_success: true
+            auth_method_used: "sql"
+            auth_output: "{{ sql_auth_test.stdout }}"
+          when:
+            - sql_auth_test is defined
+            - sql_auth_test.rc == 0
+          tags: [auth]
+
+        - name: Set authentication failure
+          set_fact:
+            auth_success: false
+            auth_method_used: "none"
+            auth_output: ""
+          when:
+            - (windows_auth_test is not defined or windows_auth_test.rc != 0)
+            - (sql_auth_test is not defined or sql_auth_test.rc != 0)
+          tags: [auth]
+
+    - name: Update authentication test result
+      set_fact:
+        test_results: "{{ test_results | combine({'tests_performed': test_results.tests_performed | combine({'authentication': 'PASS' if auth_success else 'FAIL'}), 'authentication_method_used': auth_method_used}) }}"
+      tags: [auth]
+
+    - name: Add authentication troubleshooting guidance if failed
+      set_fact:
+        test_results: "{{ test_results | combine({'troubleshooting_guidance': test_results.troubleshooting_guidance + auth_troubleshooting}) }}"
+      vars:
+        auth_troubleshooting:
+          - "Authentication failed. Tried methods: {{ 'Windows' if auth_method in ['auto', 'windows'] else '' }} {{ 'SQL' if auth_method in ['auto', 'sql'] else '' }}"
+          - "For Windows auth: Ensure domain trust exists and Kerberos/NTLM is configured"
+          - "For SQL auth: Verify username/password and that SQL authentication is enabled on server"
+          - "Check if mixed mode authentication is enabled on SQL Server"
+          - "Verify the account has CONNECT permission to the database"
+      when: not auth_success
+      tags: [auth]
+
+    - name: Display authentication success details
+      debug:
+        msg:
+          - "Authentication successful!"
+          - "Method used: {{ auth_method_used }}"
+          - "Connected to: {{ mssql_server }}:{{ mssql_port }}/{{ mssql_database }}"
+      when: auth_success and verbose_output
+      tags: [auth]
+
+    # ==================== Database Access Testing ====================
+    - name: Test database access and permissions
+      block:
+        - name: Run database access tests
+          shell: |
+            {% if auth_method_used == 'windows' %}
+            sqlcmd -S "{{ mssql_server }},{{ mssql_port }}" -d "{{ mssql_database }}" -E -C -l {{ connection_timeout }} \
+            {% else %}
+            sqlcmd -S "{{ mssql_server }},{{ mssql_port }}" -d "{{ mssql_database }}" \
+                   -U "{{ mssql_username }}" -P "{{ mssql_password }}" -C -l {{ connection_timeout }} \
+            {% endif %}
+                   -Q "SET NOCOUNT ON;
+                       -- Test 1: Basic connectivity
+                       SELECT 'TEST1_CONNECTIVITY' as TestName, 'PASS' as Result;
+
+                       -- Test 2: Database access
+                       SELECT 'TEST2_DATABASE_ACCESS' as TestName,
+                              CASE WHEN DB_NAME() = '{{ mssql_database }}' THEN 'PASS' ELSE 'FAIL' END as Result;
+
+                       -- Test 3: User permissions
+                       SELECT 'TEST3_USER_PERMISSIONS' as TestName,
+                              CASE WHEN HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE') = 1
+                                   THEN 'PASS' ELSE 'LIMITED' END as Result;
+
+                       -- Test 4: Version information
+                       SELECT 'TEST4_VERSION' as TestName,
+                              SUBSTRING(@@VERSION, 1, CHARINDEX(CHAR(10), @@VERSION) - 1) as Result;" \
+                   -h -1 -W -s "|"
+          register: db_access_test
+          changed_when: false
+          failed_when: false
+          when: auth_success
+          no_log: "{{ not verbose_output }}"
+          tags: [database]
+
+        - name: Parse database access test results
+          set_fact:
+            db_access_success: "{{ db_access_test.rc == 0 }}"
+            db_test_output: "{{ db_access_test.stdout if db_access_test.rc == 0 else db_access_test.stderr }}"
+          when: auth_success
+          tags: [database]
+
+        - name: Update database access test result
+          set_fact:
+            test_results: "{{ test_results | combine({'tests_performed': test_results.tests_performed | combine({'database_access': 'PASS' if db_access_success else 'FAIL'})}) }}"
+          when: auth_success
+          tags: [database]
+
+      rescue:
+        - name: Handle database access test failure
+          set_fact:
+            db_access_success: false
+            test_results: "{{ test_results | combine({'tests_performed': test_results.tests_performed | combine({'database_access': 'FAIL'})}) }}"
+          tags: [database]
+
+    # ==================== InSpec Compliance Testing ====================
+    - name: Check if InSpec is installed
+      command: which inspec
+      register: inspec_check
+      changed_when: false
+      failed_when: false
+      tags: [inspec]
+
+    - name: Run InSpec compliance tests
+      block:
+        - name: Create InSpec inputs file
+          copy:
+            dest: "{{ results_dir }}/inspec_inputs.yml"
+            content: |
+              server: {{ mssql_server }}
+              port: {{ mssql_port }}
+              database: {{ mssql_database }}
+              auth_method: {{ auth_method_used }}
+              {% if auth_method_used == 'sql' %}
+              username: {{ mssql_username }}
+              password: {{ mssql_password }}
+              {% endif %}
+          no_log: "{{ not verbose_output }}"
+          when:
+            - auth_success
+            - inspec_check.rc == 0
+          tags: [inspec]
+
+        - name: Execute InSpec profile
+          shell: |
+            inspec exec {{ inspec_profile_path }} \
+              --input-file {{ results_dir }}/inspec_inputs.yml \
+              --reporter json:{{ results_dir }}/inspec_results_{{ test_timestamp }}.json \
+              --reporter cli \
+              --no-color
+          register: inspec_execution
+          changed_when: false
+          failed_when: false
+          when:
+            - auth_success
+            - inspec_check.rc == 0
+          tags: [inspec]
+
+        - name: Parse InSpec results
+          block:
+            - name: Read InSpec JSON results
+              slurp:
+                src: "{{ results_dir }}/inspec_results_{{ test_timestamp }}.json"
+              register: inspec_json
+              when: inspec_execution.rc is defined
+              tags: [inspec]
+
+            - name: Parse InSpec statistics
+              set_fact:
+                inspec_stats:
+                  total: "{{ (inspec_json.content | b64decode | from_json).statistics.controls.total | default(0) }}"
+                  passed: "{{ (inspec_json.content | b64decode | from_json).statistics.controls.passed.total | default(0) }}"
+                  failed: "{{ (inspec_json.content | b64decode | from_json).statistics.controls.failed.total | default(0) }}"
+                  skipped: "{{ (inspec_json.content | b64decode | from_json).statistics.controls.skipped.total | default(0) }}"
+              when:
+                - inspec_json is defined
+                - inspec_json.content is defined
+              tags: [inspec]
+
+            - name: Update InSpec test results
+              set_fact:
+                test_results: "{{ test_results | combine({
+                  'tests_performed': test_results.tests_performed | combine({'inspec_execution': 'PASS' if inspec_execution.rc == 0 else 'PARTIAL'}),
+                  'inspec_controls': {
+                    'total': inspec_stats.total | int,
+                    'passed': inspec_stats.passed | int,
+                    'failed': inspec_stats.failed | int,
+                    'skipped': inspec_stats.skipped | int,
+                    'success_rate': ((inspec_stats.passed | int / inspec_stats.total | int * 100) | round(2)) if inspec_stats.total | int > 0 else 0
+                  }
+                }) }}"
+              when: inspec_stats is defined
+              tags: [inspec]
+          rescue:
+            - name: Handle InSpec parsing failure
+              set_fact:
+                test_results: "{{ test_results | combine({'tests_performed': test_results.tests_performed | combine({'inspec_execution': 'ERROR'})}) }}"
+              tags: [inspec]
+
+      rescue:
+        - name: Handle InSpec execution failure
+          set_fact:
+            test_results: "{{ test_results | combine({'tests_performed': test_results.tests_performed | combine({'inspec_execution': 'FAIL'})}) }}"
+          tags: [inspec]
+
+    - name: Add InSpec troubleshooting if not installed
+      set_fact:
+        test_results: "{{ test_results | combine({'troubleshooting_guidance': test_results.troubleshooting_guidance + ['InSpec is not installed. Install with: curl https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec']}) }}"
+      when: inspec_check.rc != 0
+      tags: [inspec]
+
+    # ==================== Results Generation and Reporting ====================
+    - name: Generate summary report
+      set_fact:
+        summary_report: |
+          ========================================
+          MSSQL Connectivity Test Summary
+          ========================================
+          Timestamp: {{ test_datetime }}
+          Server: {{ mssql_server }}:{{ mssql_port }}
+          Database: {{ mssql_database }}
+
+          Test Results:
+          -------------
+          ✓ Network Connectivity: {{ test_results.tests_performed.network_connectivity }}
+          ✓ Authentication: {{ test_results.tests_performed.authentication }} (Method: {{ test_results.authentication_method_used }})
+          ✓ Database Access: {{ test_results.tests_performed.database_access }}
+          ✓ InSpec Compliance: {{ test_results.tests_performed.inspec_execution }}
+          {% if test_results.inspec_controls is defined %}
+
+          InSpec Controls Summary:
+          ------------------------
+          Total Controls: {{ test_results.inspec_controls.total }}
+          Passed: {{ test_results.inspec_controls.passed }}
+          Failed: {{ test_results.inspec_controls.failed }}
+          Success Rate: {{ test_results.inspec_controls.success_rate }}%
+          {% endif %}
+
+          {% if test_results.troubleshooting_guidance | length > 0 %}
+          Troubleshooting Guidance:
+          -------------------------
+          {% for guidance in test_results.troubleshooting_guidance %}
+          • {{ guidance }}
+          {% endfor %}
+          {% endif %}
+          ========================================
+      tags: [report]
+
+    - name: Display summary report
+      debug:
+        msg: "{{ summary_report.split('\n') }}"
+      tags: [report]
+
+    - name: Write JSON results to file
+      copy:
+        dest: "{{ results_dir }}/test_results_{{ test_timestamp }}.json"
+        content: "{{ test_results | to_nice_json }}"
+      tags: [report]
+
+    - name: Write summary report to file
+      copy:
+        dest: "{{ results_dir }}/test_summary_{{ test_timestamp }}.txt"
+        content: "{{ summary_report }}"
+      tags: [report]
+
+    - name: Set final exit status
+      set_fact:
+        all_tests_passed: "{{
+          test_results.tests_performed.network_connectivity == 'PASS' and
+          test_results.tests_performed.authentication == 'PASS' and
+          test_results.tests_performed.database_access == 'PASS'
+        }}"
+      tags: [report]
+
+    - name: Final status message
+      debug:
+        msg:
+          - "{{ 'SUCCESS: All connectivity tests passed!' if all_tests_passed else 'FAILURE: Some tests failed. Check troubleshooting guidance.' }}"
+          - "Results saved to: {{ results_dir }}"
+      tags: [report]
+
+  handlers:
+    - name: cleanup_temp_files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ results_dir }}/inspec_inputs.yml"
+      when: not keep_temp_files | default(false)
