@@ -1,0 +1,205 @@
+---
+- name: Execute InSpec MSSQL Controls (Vault Workaround)
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # InSpec execution parameters - using prompt for password instead of vault
+    inspec_profile: "./trusted.rb"
+    mssql_server: "GDCIWVC0007"
+    mssql_port: 1733
+    mssql_username: "ps82789"
+    
+    # Results and logging
+    results_dir: "/tmp/inspec_mssql_{{ ansible_date_time.epoch }}"
+    
+  vars_prompt:
+    - name: mssql_password
+      prompt: "Enter MSSQL password"
+      private: yes
+      
+  environment:
+    # Force Ansible to use /tmp for all operations
+    HOME: "/tmp"
+    ANSIBLE_CONFIG: "./ansible.cfg"
+    ANSIBLE_LOCAL_TEMP: "./tmp"
+    ANSIBLE_REMOTE_TEMP: "/tmp"
+    
+  tasks:
+    - name: Create all necessary directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ results_dir }}"
+        - "/tmp/.config"
+        - "/tmp/.cache" 
+        - "/tmp/.data"
+        - "/tmp/.gem"
+        - "/tmp/.bundle"
+        - "/tmp/.inspec"
+
+    - name: Display test configuration
+      debug:
+        msg: |
+          InSpec MSSQL Test Configuration:
+          Profile: {{ inspec_profile }}
+          Server: {{ mssql_server }}:{{ mssql_port }}
+          Username: {{ mssql_username }}
+          Password: [PROVIDED VIA PROMPT]
+          Results: {{ results_dir }}
+          Working HOME: /tmp
+
+    - name: Check if InSpec profile exists
+      stat:
+        path: "{{ inspec_profile }}"
+      register: profile_check
+
+    - name: Fail if profile doesn't exist
+      fail:
+        msg: "InSpec profile not found: {{ inspec_profile }}"
+      when: not profile_check.stat.exists
+
+    - name: Execute InSpec MSSQL controls with comprehensive environment override
+      shell: |
+        cd /tmp && /usr/bin/inspec exec "{{ ansible_env.PWD }}/{{ inspec_profile }}" \
+          -t winrm://{{ mssql_server }}:{{ mssql_port }} \
+          --user {{ mssql_username }} \
+          --password "{{ mssql_password }}" \
+          --reporter json:{{ results_dir }}/inspec_results.json \
+          --reporter cli \
+          --no-color \
+          --chef-license accept \
+          --no-check-version
+      register: inspec_execution
+      failed_when: false
+      changed_when: false
+      environment:
+        HOME: "/tmp"
+        USER: "inspec"
+        LOGNAME: "inspec" 
+        USERNAME: "inspec"
+        TMPDIR: "/tmp"
+        TEMP: "/tmp"
+        TMP: "/tmp"
+        XDG_CONFIG_HOME: "/tmp/.config"
+        XDG_CACHE_HOME: "/tmp/.cache"
+        XDG_DATA_HOME: "/tmp/.data"
+        XDG_RUNTIME_DIR: "/tmp/.runtime"
+        GEM_HOME: "/tmp/.gem"
+        GEM_PATH: "/tmp/.gem"
+        BUNDLE_USER_HOME: "/tmp/.bundle"
+        BUNDLE_USER_CONFIG: "/tmp/.bundle"
+        BUNDLE_USER_CACHE: "/tmp/.bundle/cache"
+        BUNDLE_USER_PLUGIN: "/tmp/.bundle/plugin"
+        INSPEC_USER_HOME: "/tmp/.inspec"
+        INSPEC_CONFIG_DIR: "/tmp/.inspec"
+        INSPEC_CACHE_DIR: "/tmp/.inspec/cache"
+        RUBY_USER_HOME: "/tmp/.ruby"
+
+    - name: Check if results file was created
+      stat:
+        path: "{{ results_dir }}/inspec_results.json"
+      register: results_file
+
+    - name: Parse InSpec results (if available)
+      slurp:
+        src: "{{ results_dir }}/inspec_results.json"
+      register: inspec_results_raw
+      when: results_file.stat.exists
+
+    - name: Process InSpec JSON results
+      set_fact:
+        inspec_data: "{{ inspec_results_raw.content | b64decode | from_json }}"
+      when: results_file.stat.exists and inspec_results_raw is defined
+      ignore_errors: yes
+
+    - name: Calculate test statistics
+      set_fact:
+        test_stats:
+          total_controls: "{{ inspec_data.profiles[0].controls | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          passed_controls: "{{ inspec_data.profiles[0].controls | selectattr('status', 'equalto', 'passed') | list | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          failed_controls: "{{ inspec_data.profiles[0].controls | selectattr('status', 'equalto', 'failed') | list | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          skipped_controls: "{{ inspec_data.profiles[0].controls | selectattr('status', 'equalto', 'skipped') | list | length if inspec_data is defined and inspec_data.profiles is defined else 0 }}"
+          execution_time: "{{ inspec_data.statistics.duration if inspec_data is defined and inspec_data.statistics is defined else 0 }}"
+      when: inspec_data is defined
+
+    - name: Display execution results
+      debug:
+        msg: |
+          === InSpec MSSQL Test Results ===
+          Execution Status: {{ 'SUCCESS' if inspec_execution.rc == 0 else 'COMPLETED WITH ISSUES' if inspec_execution.rc in [1, 100] else 'EXECUTION ERROR' }}
+          Return Code: {{ inspec_execution.rc }}
+          {% if test_stats is defined %}
+          
+          Control Statistics:
+          - Total Controls: {{ test_stats.total_controls }}
+          - Passed: {{ test_stats.passed_controls }}
+          - Failed: {{ test_stats.failed_controls }}
+          - Skipped: {{ test_stats.skipped_controls }}
+          - Success Rate: {{ ((test_stats.passed_controls | int) / (test_stats.total_controls | int) * 100) | round(1) if test_stats.total_controls | int > 0 else 0 }}%
+          - Execution Time: {{ test_stats.execution_time }}s
+          {% else %}
+          Raw Output Available: {{ results_file.stat.exists }}
+          {% endif %}
+          
+          Results Location: {{ results_dir }}
+
+    - name: Show raw output on execution error
+      debug:
+        msg: |
+          === InSpec Execution Output ===
+          STDOUT:
+          {{ inspec_execution.stdout }}
+          
+          STDERR:
+          {{ inspec_execution.stderr }}
+      when: inspec_execution.rc != 0
+
+    - name: Generate summary report
+      copy:
+        content: |
+          {
+            "test_summary": {
+              "timestamp": "{{ ansible_date_time.iso8601 }}",
+              "profile": "{{ inspec_profile }}",
+              "target": "{{ mssql_server }}:{{ mssql_port }}",
+              "execution_status": "{{ 'SUCCESS' if inspec_execution.rc == 0 else 'FAILED' }}",
+              "return_code": {{ inspec_execution.rc }},
+              "environment_workaround": "Applied /tmp HOME override + password prompt",
+              {% if test_stats is defined %}
+              "statistics": {
+                "total_controls": {{ test_stats.total_controls }},
+                "passed_controls": {{ test_stats.passed_controls }},
+                "failed_controls": {{ test_stats.failed_controls }},
+                "skipped_controls": {{ test_stats.skipped_controls }},
+                "success_rate": {{ ((test_stats.passed_controls | int) / (test_stats.total_controls | int) * 100) | round(1) if test_stats.total_controls | int > 0 else 0 }},
+                "execution_time": {{ test_stats.execution_time }}
+              }
+              {% else %}
+              "statistics": null
+              {% endif %}
+            }
+          }
+        dest: "{{ results_dir }}/test_summary.json"
+
+    - name: Display final summary
+      debug:
+        msg: |
+          === Final Test Summary ===
+          Profile Executed: {{ inspec_profile }}
+          Target: {{ mssql_server }}:{{ mssql_port }}
+          Overall Status: {{ 'PASS' if inspec_execution.rc == 0 else 'FAIL' }}
+          Environment Override Applied: HOME=/tmp, Password via prompt
+          
+          Files Generated:
+          - Test Summary: {{ results_dir }}/test_summary.json
+          {% if results_file.stat.exists %}
+          - InSpec Results: {{ results_dir }}/inspec_results.json
+          {% endif %}
+          
+          {% if inspec_execution.rc == 0 %}
+          SUCCESS: All controls executed successfully
+          {% else %}
+          EXECUTION ISSUE: Check the raw output above for specific errors
+          {% endif %}
