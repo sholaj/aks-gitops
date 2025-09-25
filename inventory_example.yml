@@ -1,0 +1,89 @@
+---
+# Example Ansible inventory for MSSQL InSpec compliance scanning
+# Generated from flat file with unique credentials per database
+
+all:
+  vars:
+    base_results_dir: /tmp/compliance_scans
+    ansible_connection: local
+    inspec_debug_mode: false
+  children:
+    mssql_databases:
+      hosts:
+        # Each host represents a unique database with its own credentials
+        sqlserver01_example_com_master_1433:
+          mssql_server: sqlserver01.example.com
+          mssql_port: 1433
+          mssql_database: master
+          mssql_service: ''
+          mssql_version: '2019'
+          mssql_username: sa_scan_user
+          mssql_password: P@ssw0rd123
+
+        sqlserver02_example_com_production_db_1433:
+          mssql_server: sqlserver02.example.com
+          mssql_port: 1433
+          mssql_database: production_db
+          mssql_service: ''
+          mssql_version: '2018'
+          mssql_username: prod_scanner
+          mssql_password: "{{ vault_password_sqlserver02_example_com_production_db_1433 }}"
+
+        sqlserver03_example_com_test_db_1434:
+          mssql_server: sqlserver03.example.com
+          mssql_port: 1434
+          mssql_database: test_db
+          mssql_service: SQLEXPRESS
+          mssql_version: '2016'
+          mssql_username: test_user
+          mssql_password: TestP@ss456
+
+        # Multiple databases on same server with different credentials
+        dbserver_example_com_finance_db_1433:
+          mssql_server: dbserver.example.com
+          mssql_port: 1433
+          mssql_database: finance_db
+          mssql_service: ''
+          mssql_version: '2019'
+          mssql_username: finance_scan
+          mssql_password: FinP@ss789
+
+        dbserver_example_com_hr_db_1433:
+          mssql_server: dbserver.example.com
+          mssql_port: 1433
+          mssql_database: hr_db
+          mssql_service: ''
+          mssql_version: '2019'
+          mssql_username: hr_scan
+          mssql_password: HRP@ss321
+
+        dbserver_example_com_sales_db_1433:
+          mssql_server: dbserver.example.com
+          mssql_port: 1433
+          mssql_database: sales_db
+          mssql_service: ''
+          mssql_version: '2019'
+          mssql_username: sales_scan
+          mssql_password: "{{ vault_password_dbserver_example_com_sales_db_1433 }}"
+
+    oracle_databases:
+      hosts:
+        oraserver01_example_com_ORCL_1521:
+          oracle_server: oraserver01.example.com
+          oracle_port: 1521
+          oracle_database: ORCL
+          oracle_service: XE
+          oracle_version: 19c
+          oracle_username: ora_scanner
+          oracle_password: OraP@ss123
+
+    sybase_databases:
+      hosts:
+        sybserver01_example_com_master_5000:
+          sybase_server: sybserver01.example.com
+          sybase_port: 5000
+          sybase_database: master
+          sybase_service: SAP_ASE
+          sybase_version: '16.0'
+          sybase_username: syb_scanner
+          sybase_password: "{{ vault_password_sybserver01_example_com_master_5000 }}"

@@ -1,0 +1,28 @@
+---
+# Variables for mssql_inspec role
+
+# Supported MSSQL versions
+supported_mssql_versions:
+  - "2008"
+  - "2012"
+  - "2014"
+  - "2016"
+  - "2018"
+  - "2019"
+
+# InSpec binary path
+inspec_binary_path: "/usr/bin/inspec"
+
+# Control file patterns
+control_file_pattern: "*.rb"
+
+# Result file format
+result_format: "json-min"
+
+# Error messages
+error_messages:
+  missing_params: "Required MSSQL connection parameters are missing"
+  inspec_not_installed: "InSpec is not installed. Please install InSpec before running this role."
+  unsupported_version: "MSSQL version is not supported"
+  connection_failed: "Cannot connect to database. Please verify connection parameters."
+  password_retrieval_failed: "Unable to retrieve password from secure store"

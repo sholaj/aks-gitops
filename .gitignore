@@ -12,6 +12,22 @@ dist/
 build/
 *.egg-info/
 
+# Vault password files - DO NOT COMMIT
+.vaultpass
+vault_password.txt
+*.vaultpass
+
+# Ansible temporary files
+*.retry
+.ansible/
+ansible.log
+
+# InSpec results
+/tmp/inspec_*
+/tmp/compliance_scans/
+inspec_results_*/
+*_NIST_*_temp_files/
+
 # Claude-related files and directories
 .claude/
 *.claude
