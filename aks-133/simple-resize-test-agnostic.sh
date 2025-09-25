@@ -42,27 +42,65 @@ fail() {
 
 prereq_check() {
     local ok=true
+    echo "Running prerequisite checks..."
+
+    # Check kubectl binary
     if ! command -v kubectl &>/dev/null; then
-        warn "kubectl not found in PATH"
-        ok=false
+        fail "kubectl not found in PATH - cannot continue"
+        return 1
     fi
+    pass "kubectl found in PATH"
+
+    # Check kubectl client version
     if ! kubectl version --client &>/dev/null; then
-        warn "kubectl not configured or cannot connect"
-        ok=false
+        fail "kubectl client version check failed"
+        return 1
     fi
+    pass "kubectl client configured"
+
+    # Check cluster connection
     if ! kubectl cluster-info &>/dev/null; then
-        warn "Cannot connect to Kubernetes cluster"
-        ok=false
+        fail "Cannot connect to Kubernetes cluster - please ensure kubectl is configured"
+        echo "   Try running: kubectl config current-context"
+        return 1
     fi
-    if ! kubectl api-resources | grep -q pods; then
-        warn "Kubernetes cluster does not support pods"
-        ok=false
-    fi
-    if [[ "$ok" == false ]]; then
-        warn "Prerequisite checks failed. Continuing with warnings."
+
+    # Get current context to show which cluster we're using
+    local context=$(kubectl config current-context 2>/dev/null || echo "unknown")
+    echo "   Connected to context: $context"
+
+    # Check if it's a local cluster (common local cluster contexts)
+    if [[ "$context" =~ (docker-desktop|minikube|kind-|rancher-desktop|colima|microk8s) ]]; then
+        pass "Using local Kubernetes cluster: $context"
     else
-        pass "Prerequisite checks passed"
+        warn "Context '$context' may not be a local cluster - proceed with caution"
     fi
+
+    # Check API resources
+    if ! kubectl api-resources 2>/dev/null | grep -q pods; then
+        fail "Kubernetes cluster does not support pods resource"
+        return 1
+    fi
+
+    # Check if we can list namespaces (basic permission check)
+    if ! kubectl get namespaces &>/dev/null; then
+        fail "Cannot list namespaces - insufficient permissions"
+        return 1
+    fi
+    pass "Cluster permissions verified"
+
+    # Check for existing test namespace to warn about potential conflicts
+    if kubectl get namespace $NAMESPACE &>/dev/null; then
+        warn "Test namespace '$NAMESPACE' already exists - will reuse or update"
+    fi
+
+    if [[ "$ok" == false ]]; then
+        fail "Prerequisite checks failed - cannot continue"
+        return 1
+    else
+        pass "All prerequisite checks passed"
+    fi
+    return 0
 }
 
 setup_namespace_and_deployment() {
@@ -70,8 +108,13 @@ setup_namespace_and_deployment() {
     if kubectl get namespace $NAMESPACE &>/dev/null; then
         echo "   Namespace '$NAMESPACE' already exists"
     else
-        kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
-        echo "   Namespace '$NAMESPACE' created"
+        if kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null; then
+            echo "   Namespace '$NAMESPACE' created"
+            pass "Namespace created successfully"
+        else
+            fail "Failed to create namespace '$NAMESPACE'"
+            return 1
+        fi
     fi
 
     echo "2. Checking existing deployment state..."
@@ -83,20 +126,26 @@ setup_namespace_and_deployment() {
         echo "   Deployment '$DEPLOYMENT_NAME' exists, checking configuration..."
 
         # Check if deployment has correct initial resources
-        current_cpu_req=$(kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}' 2>/dev/null || echo "")
-        current_mem_req=$(kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}' 2>/dev/null || echo "")
+        current_cpu_req=$(kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}' 2>/dev/null || echo "none")
+        current_mem_req=$(kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}' 2>/dev/null || echo "none")
+
+        echo "   Current resources: CPU=$current_cpu_req, Memory=$current_mem_req"
+        echo "   Expected initial: CPU=$INITIAL_CPU_REQUEST, Memory=$INITIAL_MEM_REQUEST"
 
         if [[ "$current_cpu_req" != "$INITIAL_CPU_REQUEST" ]] || [[ "$current_mem_req" != "$INITIAL_MEM_REQUEST" ]]; then
             echo "   Deployment resources differ from initial configuration, will update"
             needs_update=true
         else
             echo "   Deployment configuration matches expected state"
+            pass "Deployment already configured correctly"
         fi
+    else
+        echo "   Deployment '$DEPLOYMENT_NAME' does not exist, will create"
     fi
 
     if [[ "$deployment_exists" == false ]] || [[ "$needs_update" == true ]]; then
         echo "3. Creating/Updating deployment with resize policy and security context..."
-        cat <<EOF | kubectl apply -f -
+        if cat <<EOF | kubectl apply -f - 2>/dev/null
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -142,22 +191,55 @@ spec:
         - resourceName: memory
           restartPolicy: NotRequired
 EOF
+        then
+            if [[ "$deployment_exists" == false ]]; then
+                pass "Deployment created successfully"
+            else
+                pass "Deployment updated successfully"
+            fi
+        else
+            fail "Failed to create/update deployment"
+            return 1
+        fi
     else
         echo "3. Deployment already exists with correct configuration, skipping creation"
     fi
 
     echo "4. Waiting for deployment to be ready..."
-    if kubectl wait --for=condition=available deployment/$DEPLOYMENT_NAME -n $NAMESPACE --timeout=60s 2>/dev/null; then
-        pass "Deployment is ready"
-        # Get the pod name for the deployment
-        POD_NAME=$(kubectl get pods -n $NAMESPACE -l app=resize-test -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-        if [[ -n "$POD_NAME" ]]; then
-            echo "   Using pod: $POD_NAME"
-        else
-            warn "Could not identify pod for deployment"
+    local wait_time=0
+    local max_wait=60
+
+    while [[ $wait_time -lt $max_wait ]]; do
+        if kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE &>/dev/null; then
+            local available=$(kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null)
+            if [[ "$available" == "True" ]]; then
+                pass "Deployment is ready"
+                # Get the pod name for the deployment
+                POD_NAME=$(kubectl get pods -n $NAMESPACE -l app=resize-test -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+                if [[ -n "$POD_NAME" ]]; then
+                    echo "   Using pod: $POD_NAME"
+                    # Check pod status
+                    local pod_status=$(kubectl get pod $POD_NAME -n $NAMESPACE -o jsonpath='{.status.phase}' 2>/dev/null)
+                    echo "   Pod status: $pod_status"
+                    if [[ "$pod_status" != "Running" ]]; then
+                        warn "Pod is not in Running state yet"
+                    fi
+                else
+                    warn "Could not identify pod for deployment"
+                fi
+                break
+            fi
         fi
-    else
+        echo "   Waiting for deployment to become available... ($wait_time/$max_wait seconds)"
+        sleep 5
+        wait_time=$((wait_time + 5))
+    done
+
+    if [[ $wait_time -ge $max_wait ]]; then
         warn "Deployment did not become ready in time"
+        # Show deployment status for debugging
+        echo "   Deployment status:"
+        kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE 2>/dev/null || echo "   Could not get deployment status"
     fi
 }
 
@@ -274,11 +356,11 @@ cleanup() {
             if kubectl delete namespace $NAMESPACE --timeout=30s --ignore-not-found=true 2>/dev/null; then
                 pass "Namespace deleted"
             else
-                warn "Namespace deletion failed or timed out"
+                warn "Namespace deletion failed or timed out - namespace may still exist"
             fi
         else
             echo "   Namespace '$NAMESPACE' does not exist, nothing to clean"
-            pass "Cleanup already complete"
+            pass "No cleanup needed - namespace already absent"
         fi
     elif [[ "$CLEANUP" == "no" ]]; then
         echo "9. Keeping test resources (namespace: $NAMESPACE)"
@@ -290,11 +372,14 @@ cleanup() {
                 if kubectl delete namespace $NAMESPACE --timeout=30s --ignore-not-found=true 2>/dev/null; then
                     pass "Namespace deleted"
                 else
-                    warn "Namespace deletion failed or timed out"
+                    warn "Namespace deletion failed or timed out - namespace may still exist"
                 fi
+            else
+                echo "   Keeping namespace '$NAMESPACE' as requested"
             fi
         else
             echo "9. Namespace '$NAMESPACE' does not exist, nothing to clean"
+            pass "No cleanup needed - namespace already absent"
         fi
     fi
 }
@@ -354,8 +439,19 @@ main() {
     echo "Note: Using Deployment with security context for better security practices"
     echo ""
 
-    # Run all steps, continuing even if one fails
-    prereq_check || true
+    # Run prerequisite check first - exit if it fails
+    if ! prereq_check; then
+        echo ""
+        echo "Prerequisites not met. Please ensure:"
+        echo "  1. kubectl is installed and in PATH"
+        echo "  2. You have a local Kubernetes cluster running (Docker Desktop, minikube, kind, etc.)"
+        echo "  3. kubectl is configured to connect to your cluster"
+        echo ""
+        echo "You can verify connection with: kubectl cluster-info"
+        exit 1
+    fi
+
+    # Run remaining steps, continuing even if one fails
     setup_namespace_and_deployment || true
     show_initial_resources || true
     resize_cpu || true
