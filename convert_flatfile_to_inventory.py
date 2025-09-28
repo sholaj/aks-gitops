@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 Convert flat-file database connection details to Ansible inventory format
-Input format: PLATFORM SERVER_NAME DB_NAME SERVICE_NAME PORT VERSION [USERNAME] [PASSWORD]
+Input format: PLATFORM SERVER_NAME DB_NAME SERVICE_NAME PORT VERSION
 Example: MSSQL m02dsm3 m02dsm3 BIRS_Confidential 1733 2017
-Example with creds: MSSQL m02dsm3 m02dsm3 BIRS_Confidential 1733 2017 scan_user MyP@ssw0rd
+
+NOTE: Original script does NOT include credentials in flat file!
+- Username comes from predefined service account (e.g., dbmaint)
+- Password retrieved externally via pwEcho.exe/Cloakware system
 """
 
 import sys
@@ -16,7 +19,7 @@ from pathlib import Path
 def parse_flatfile_line(line):
     """Parse a single line from the flat file"""
     parts = line.strip().split()
-    if len(parts) < 6:
+    if len(parts) != 6:
         return None
 
     parsed = {
@@ -27,13 +30,6 @@ def parse_flatfile_line(line):
         'port': parts[4],
         'version': parts[5]
     }
-
-    # Optional username and password
-    if len(parts) >= 7:
-        parsed['username'] = parts[6]
-    if len(parts) >= 8:
-        # Join remaining parts as password (in case password contains spaces)
-        parsed['password'] = ' '.join(parts[7:])
 
     return parsed
 
@@ -84,15 +80,12 @@ def convert_to_inventory(input_file, output_format='yaml', default_username='nis
                 'mssql_database': parsed['database'],
                 'mssql_service': parsed['service'] if parsed['service'] != 'null' else '',
                 'mssql_version': parsed['version'],
-                'mssql_username': parsed.get('username', default_username),
+                'mssql_username': default_username,
                 'mssql_host_id': host_id  # Add host_id for password lookup
             }
 
-            # Store password separately
-            if 'password' in parsed:
-                passwords[f"vault_{host_id}_password"] = parsed['password']
-            else:
-                passwords[f"vault_{host_id}_password"] = "CHANGE_ME"  # Placeholder
+            # Store password placeholder - DB team will provide actual passwords
+            passwords[f"vault_{host_id}_password"] = "DB_TEAM_TO_PROVIDE"
 
             # Add to appropriate group
             if parsed['platform'].upper() == 'MSSQL':
@@ -130,28 +123,27 @@ def generate_sample_flatfile(output_file):
     """Generate a sample flat file with example entries"""
 
     sample_content = """# Sample database inventory file
-# Format: PLATFORM SERVER_NAME DB_NAME SERVICE_NAME PORT VERSION [USERNAME] [PASSWORD]
+# Format: PLATFORM SERVER_NAME DB_NAME SERVICE_NAME PORT VERSION
 # Lines starting with # are comments
-# If username/password are not provided, defaults will be used
-# Password can be omitted to use Ansible Vault
+# NO CREDENTIALS IN FLAT FILE - DB team provides passwords separately
 
-# MSSQL Examples - with unique credentials per server
-MSSQL sqlserver01.example.com master default 1433 2019 sa_scan_user P@ssw0rd123
-MSSQL sqlserver02.example.com production_db null 1433 2018 prod_scanner
-MSSQL sqlserver03.example.com test_db SQLEXPRESS 1434 2016 test_user TestP@ss456
-MSSQL sqlserver04.example.com app_db null 1433 2019 app_scanner
+# MSSQL Examples
+MSSQL sqlserver01.example.com master default 1433 2019
+MSSQL sqlserver02.example.com production_db null 1433 2018
+MSSQL sqlserver03.example.com test_db SQLEXPRESS 1434 2016
+MSSQL m02dsm3 m02dsm3 BIRS_Confidential 1733 2017
 
-# Multiple databases on same server with different creds
-MSSQL dbserver.example.com finance_db null 1433 2019 finance_scan FinP@ss789
-MSSQL dbserver.example.com hr_db null 1433 2019 hr_scan HRP@ss321
-MSSQL dbserver.example.com sales_db null 1433 2019 sales_scan SalesP@ss654
+# Multiple databases on same server
+MSSQL dbserver.example.com finance_db null 1433 2019
+MSSQL dbserver.example.com hr_db null 1433 2019
+MSSQL dbserver.example.com sales_db null 1433 2019
 
 # Oracle Examples (for future use)
-ORACLE oraserver01.example.com ORCL XE 1521 19c ora_scanner OraP@ss123
-ORACLE oraserver02.example.com PRODDB null 1521 12c prod_scan
+ORACLE oraserver01.example.com ORCL XE 1521 19c
+ORACLE oraserver02.example.com PRODDB null 1521 12c
 
 # Sybase Examples (for future use)
-SYBASE sybserver01.example.com master SAP_ASE 5000 16.0 syb_scanner SybP@ss789
+SYBASE sybserver01.example.com master SAP_ASE 5000 16.0
 """
 
     with open(output_file, 'w') as f:

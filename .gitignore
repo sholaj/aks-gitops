@@ -1,16 +1,11 @@
+# System files
 .DS_Store
 *.log
-node_modules/
 .env
 .idea/
 .vscode/
 __pycache__/
 *.pyc
-.pytest_cache/
-.coverage
-dist/
-build/
-*.egg-info/
 
 # Vault password files - DO NOT COMMIT
 .vaultpass
@@ -22,25 +17,19 @@ vault_password.txt
 .ansible/
 ansible.log
 
-# InSpec results
+# InSpec results and temp files
 /tmp/inspec_*
 /tmp/compliance_scans/
 inspec_results_*/
 *_NIST_*_temp_files/
 
-# Claude-related files and directories
-.claude/
-*.claude
-.claude-code/
-.claude-workspace/
-.claude-session/
-.claude-cache/
-claude-output/
-claude-artifacts/
-.clauderc
-.claude.json
-.claude.yml
-.claude.yaml
-CLAUDE.md
-claude.config.*
-categories/
+# Test files
+test_*.yml
+test_*.txt
+*_test.*
+expected_*
+corrected_*
+
+# Backup files
+*_backup.*
+*.bak

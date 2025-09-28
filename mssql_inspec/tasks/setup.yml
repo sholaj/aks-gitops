@@ -6,18 +6,21 @@
     path: "{{ inspec_results_dir }}"
     state: directory
     mode: '0755'
+  delegate_to: "{{ inspec_delegate_host }}"
 
 - name: Create temporary working directory
   file:
     path: "{{ inspec_temp_dir }}"
     state: directory
     mode: '0755'
+  delegate_to: "{{ inspec_delegate_host }}"
 
 - name: Find all Ruby control files for specified MSSQL version
   find:
     paths: "{{ role_path }}/files/MSSQL{{ mssql_version }}_ruby"
     patterns: "*.rb"
   register: control_files
+  delegate_to: "{{ inspec_delegate_host }}"
 
 - name: Display control files to be executed
   debug:

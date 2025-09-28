@@ -1,0 +1,10 @@
+---
+# Ansible Vault file for database passwords
+# Generated on 2025-09-28 20:59:50
+#
+# This file contains password placeholders for database connections
+# Replace DB_TEAM_TO_PROVIDE with actual passwords
+# Then encrypt with: ansible-vault encrypt azure_test_vault.yml --vault-password-file .vaultpass
+#
+# Password variables:
+vault_sqlsrv_dbcompliance_1759089344_database_windows_net_testdb01_1433_password: "ComplexP@ssw0rd123!"

@@ -9,8 +9,13 @@
 
   vars:
     # Global settings - can be overridden by AAP extra vars
+    inspec_delegate_host: "{{ controller_delegate_host | default('localhost') }}"
     scan_timestamp: "{{ ansible_date_time.epoch }}"
-    enable_debug: "{{ inspec_debug_mode | default(false) }}"
+    enable_debug: false
+    # Timeout settings for lengthy scans
+    inspec_timeout: "{{ inspec_scan_timeout | default(1800) }}"  # Default 30 minutes per control
+    async_timeout: "{{ async_scan_timeout | default(3600) }}"    # Default 1 hour for async execution
+    poll_interval: "{{ async_poll_interval | default(30) }}"      # Check status every 30 seconds
     # AAP compatibility
     job_id: "{{ tower_job_id | default('local') }}"
     project_name: "{{ project_name | default('mssql_compliance') }}"
@@ -27,7 +32,7 @@
         state: directory
         mode: '0755'
       run_once: true
-      delegate_to: localhost
+      delegate_to: "{{ inspec_delegate_host }}"
 
     - name: Display scan configuration
       debug:
@@ -47,7 +52,7 @@
       register: inspec_check
       changed_when: false
       failed_when: false
-      delegate_to: localhost
+      delegate_to: "{{ inspec_delegate_host }}"
 
     - name: Fail if InSpec is not installed
       fail:
@@ -63,13 +68,18 @@
         msg: "Scanning {{ mssql_server }}:{{ mssql_port }}/{{ mssql_database }} (version {{ mssql_version }})"
       when: enable_debug
 
-    - name: Execute compliance scan for current host
+    - name: Execute MSSQL InSpec compliance scan for database
       include_role:
         name: mssql_inspec
       vars:
+        # Pass all database-specific variables from inventory host
         inspec_results_dir: "{{ base_results_dir }}/{{ mssql_server | replace('.', '_') }}_{{ mssql_database }}_{{ scan_timestamp }}"
-        inspec_debug_mode: "{{ enable_debug }}"
+        inspec_debug_mode: "{{ enable_debug | default(false) }}"
         generate_summary_report: true
+        inspec_command_timeout: "{{ inspec_timeout }}"
+        # Database connection parameters come from inventory host variables:
+        # mssql_server, mssql_port, mssql_database, mssql_service,
+        # mssql_version, mssql_username, mssql_password
 
   post_tasks:
     - name: Generate consolidated report
@@ -80,7 +90,7 @@
             patterns: "*.json"
             recurse: yes
           register: json_files
-          delegate_to: localhost
+          delegate_to: "{{ inspec_delegate_host }}"
           run_once: true
 
         - name: Display scan completion summary
@@ -97,7 +107,7 @@
               ls -la {{ base_results_dir }}/
               =====================================
           run_once: true
-          delegate_to: localhost
+          delegate_to: "{{ inspec_delegate_host }}"
       when: not ansible_check_mode
 
     - name: Archive scan results (optional)
@@ -108,7 +118,7 @@
       when:
         - archive_results | default(false)
         - not ansible_check_mode
-      delegate_to: localhost
+      delegate_to: "{{ inspec_delegate_host }}"
       run_once: true
 
     - name: Send notification (optional)
@@ -126,7 +136,7 @@
         - notification_email is defined
         - send_notifications | default(false)
       ignore_errors: yes
-      delegate_to: localhost
+      delegate_to: "{{ inspec_delegate_host }}"
       run_once: true
 
     - name: Send results to Splunk (optional)
@@ -156,7 +166,7 @@
         - send_to_splunk | bool
         - splunk_hec_url != ""
         - splunk_hec_token != ""
-      delegate_to: localhost
+      delegate_to: "{{ inspec_delegate_host }}"
       run_once: true
       ignore_errors: yes
 

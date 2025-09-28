@@ -14,6 +14,7 @@ mssql_host_id: "{{ inventory_hostname }}"
 # InSpec execution settings
 inspec_debug_mode: false
 inspec_timeout: 300  # seconds
+inspec_delegate_host: "localhost"
 
 # Results and logging
 inspec_results_dir: "/tmp/inspec_mssql_results_{{ ansible_date_time.epoch }}"

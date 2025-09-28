@@ -1,7 +1,7 @@
 ---
 # InSpec execution tasks for MSSQL
 
-- name: Execute InSpec controls for each file
+- name: Execute InSpec controls for each file (with timeout)
   shell: |
     /usr/bin/inspec exec {{ item.path }} \
       --input usernm={{ mssql_username }} \
@@ -18,6 +18,9 @@
   changed_when: false
   failed_when: false
   no_log: "{{ not inspec_debug_mode | default(true) }}"
+  async: "{{ inspec_command_timeout | default(1800) }}"
+  poll: 30
+  delegate_to: "{{ inspec_delegate_host }}"
 
 - name: Process InSpec results
   include_tasks: process_results.yml
@@ -25,3 +28,4 @@
   loop_control:
     index_var: idx
     label: "Processing result {{ idx + 1 }}"
+  delegate_to: "{{ inspec_delegate_host }}"

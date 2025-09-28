@@ -20,12 +20,15 @@
     - splunk_hec_url is defined
     - splunk_hec_token is defined
     - inspec_result_json is defined
+    - inspec_result_json | trim | length > 0
   ignore_errors: yes
-  delegate_to: localhost
+  delegate_to: "{{ inspec_delegate_host }}"
+  register: splunk_response
 
 - name: Log Splunk submission status
   debug:
-    msg: "Splunk submission {{ 'successful' if not ansible_failed_result else 'failed' }} for {{ mssql_server }}/{{ mssql_database }}"
+    msg: "Splunk submission {{ 'successful' if splunk_response is defined and not splunk_response.failed | default(false) else 'failed' }} for {{ mssql_server }}/{{ mssql_database }}"
   when:
     - send_to_splunk | default(false) | bool
     - inspec_debug_mode | default(false) | bool
+    - splunk_response is defined
