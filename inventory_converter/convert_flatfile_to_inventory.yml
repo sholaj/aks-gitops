@@ -88,7 +88,7 @@
 
     - name: Generate vault template file
       template:
-        src: vault_template.j2
+        src: templates/vault_template.j2
         dest: "{{ vault_file }}"
       when: generate_vault | bool
       register: vault_written

@@ -43,8 +43,12 @@ aks-gitops/
 ├── run_oracle_inspec.yml   # Oracle playbook (database-level)
 ├── run_sybase_inspec.yml   # Sybase playbook (database-level)
 ├── run_compliance_scans.yml # Multi-platform playbook
-├── convert_flatfile_to_inventory.yml # Ansible-native converter
-└── process_flatfile_line.yml # Line processing for converter
+└── inventory_converter/    # Converter directory (NEW)
+    ├── convert_flatfile_to_inventory.yml # Main converter
+    ├── process_flatfile_line.yml         # Line processor
+    ├── templates/
+    │   └── vault_template.j2             # Vault template
+    └── README.md                          # Converter docs
 ```
 
 ## 🎯 Platform-Specific Features
@@ -77,17 +81,23 @@ Each platform uses its own flat file and inventory:
 ```bash
 # MSSQL Server Scanning (server-level, scans all databases)
 echo "MSSQL server01 db01 service 1433 2019" > mssql_databases.txt
-ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=mssql_databases.txt" -e "inventory_output=mssql_inventory.yml" -e "vault_output=mssql_vault.yml"
+cd inventory_converter
+ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=../mssql_databases.txt" -e "inventory_output=../mssql_inventory.yml" -e "vault_output=../mssql_vault.yml"
+cd ..
 ansible-playbook -i mssql_inventory.yml run_mssql_inspec.yml -e @mssql_vault.yml
 
 # Oracle Database Scanning (database-level)
 echo "ORACLE server01 orcl XE 1521 19c" > oracle_databases.txt
-ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=oracle_databases.txt" -e "inventory_output=oracle_inventory.yml" -e "vault_output=oracle_vault.yml"
+cd inventory_converter
+ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=../oracle_databases.txt" -e "inventory_output=../oracle_inventory.yml" -e "vault_output=../oracle_vault.yml"
+cd ..
 ansible-playbook -i oracle_inventory.yml run_oracle_inspec.yml -e @oracle_vault.yml
 
 # Sybase Database Scanning (database-level)
 echo "SYBASE server01 master SAP_ASE 5000 16" > sybase_databases.txt
-ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=sybase_databases.txt" -e "inventory_output=sybase_inventory.yml" -e "vault_output=sybase_vault.yml"
+cd inventory_converter
+ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=../sybase_databases.txt" -e "inventory_output=../sybase_inventory.yml" -e "vault_output=../sybase_vault.yml"
+cd ..
 ansible-playbook -i sybase_inventory.yml run_sybase_inspec.yml -e @sybase_vault.yml
 ```
 

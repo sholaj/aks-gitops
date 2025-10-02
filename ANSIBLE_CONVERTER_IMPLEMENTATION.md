@@ -6,9 +6,11 @@ Successfully converted the Python script `convert_flatfile_to_inventory.py` to a
 ## ✅ Implementation Complete
 
 ### 📁 Files Created
-- `convert_flatfile_to_inventory.yml` - Main converter playbook
-- `process_flatfile_line.yml` - Line processing task file
-- `templates/vault_template.j2` - Vault file template
+All converter files are in the `inventory_converter/` directory:
+- `inventory_converter/convert_flatfile_to_inventory.yml` - Main converter playbook
+- `inventory_converter/process_flatfile_line.yml` - Line processing task file
+- `inventory_converter/templates/vault_template.j2` - Vault file template
+- `inventory_converter/README.md` - Usage documentation
 
 ### 🎯 Key Features
 
@@ -38,13 +40,14 @@ Successfully converted the Python script `convert_flatfile_to_inventory.py` to a
 ### Basic Conversion
 ```bash
 # Convert flat file to inventory (default names)
+cd inventory_converter
 ansible-playbook convert_flatfile_to_inventory.yml
 
 # Custom file names
 ansible-playbook convert_flatfile_to_inventory.yml \
-  -e "flatfile_input=databases.txt" \
-  -e "inventory_output=inventory.yml" \
-  -e "vault_output=vault.yml"
+  -e "flatfile_input=../databases.txt" \
+  -e "inventory_output=../inventory.yml" \
+  -e "vault_output=../vault.yml"
 
 # Custom username
 ansible-playbook convert_flatfile_to_inventory.yml \
@@ -201,10 +204,14 @@ vault_sybase_ssh_private_key: |
 ### Workflow Integration
 ```bash
 # 1. Convert flat file to inventory
+cd inventory_converter
 ansible-playbook convert_flatfile_to_inventory.yml \
-  -e "flatfile_input=production_databases.txt"
+  -e "flatfile_input=../production_databases.txt" \
+  -e "inventory_output=../inventory.yml" \
+  -e "vault_output=../vault.yml"
 
 # 2. DB team updates vault with actual passwords
+cd ..
 # Edit vault.yml with real passwords
 
 # 3. Encrypt vault file
