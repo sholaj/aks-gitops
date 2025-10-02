@@ -16,6 +16,7 @@ Successfully converted the Python script `convert_flatfile_to_inventory.py` to a
 - ✅ Parses 6-field flat file format exactly as Python version
 - ✅ Supports MSSQL, Oracle, and Sybase platforms
 - ✅ Generates separate inventory groups for each platform
+- ✅ MSSQL server-level deduplication (multiple databases on same server:port → one host)
 - ✅ Creates vault file with password placeholders
 - ✅ Handles SSH credentials for Sybase connections
 
@@ -60,15 +61,20 @@ SYBASE sybaseserver01 master SAP_ASE 5000 16
 
 ## 🧪 Test Results
 
-### ✅ Conversion Test
-Successfully converted multi-platform test file:
-- **Input**: 6 database entries (2 MSSQL, 2 Oracle, 2 Sybase)
-- **Output**: Valid inventory with proper group structure
-- **Vault**: Generated with all password placeholders and SSH keys
+### ✅ Conversion Test with Deduplication
+Successfully converted multi-platform test file with MSSQL deduplication:
+- **Input**: 6 database entries (4 MSSQL on 2 servers, 1 Oracle, 1 Sybase)
+  - M010UB3:1733 with 2 databases (master, MW) → 1 host
+  - CXP3W349:1433 with 2 databases (FCSData, FCSMessages) → 1 host
+- **Output**: Valid inventory with 4 hosts (2 MSSQL servers, 1 Oracle, 1 Sybase)
+- **Vault**: Generated with 4 password entries (deduplicated for MSSQL)
+- **Deduplication Messages**: ✅ Proper warnings for skipped duplicate MSSQL entries
 
 ### ✅ Integration Test
 Generated inventory successfully used with existing playbooks:
-- ✅ MSSQL playbook execution validated
+- ✅ MSSQL playbook targets `mssql_servers` group (server-level)
+- ✅ Oracle playbook targets `oracle_databases` group (database-level)
+- ✅ Sybase playbook targets `sybase_databases` group (database-level)
 - ✅ Inventory structure verified with `ansible-inventory`
 - ✅ Host groups properly organized by platform
 
@@ -150,20 +156,22 @@ Hello World from Ansible Flat File Converter! 🌍
 ```yaml
 all:
   children:
-    mssql_databases:
+    mssql_servers:  # Server-level, not database-level
       hosts:
-        server_db_port:
+        server_port:  # Host ID: server_port only (no database name)
           database_platform: mssql
           mssql_server: "server"
-          mssql_database: "db"
-          # ... other variables
-    oracle_databases:
+          mssql_port: 1433
+          mssql_host_id: "server_port"
+          # Note: mssql_database and mssql_service are placeholders
+          # InSpec scans ALL databases on the server
+    oracle_databases:  # Database-level
       hosts:
         server_db_port:
           database_platform: oracle
           oracle_server: "server"
           # ... other variables
-    sybase_databases:
+    sybase_databases:  # Database-level
       hosts:
         server_db_port:
           database_platform: sybase
@@ -174,8 +182,11 @@ all:
 
 ### Vault File Structure
 ```yaml
-# Database passwords
-vault_server_db_port_password: DB_TEAM_TO_PROVIDE
+# Server/Database passwords
+# MSSQL: vault_{server}_{port}_password (server-level, no database name)
+# Oracle/Sybase: vault_{server}_{database}_{port}_password (database-level)
+vault_server_port_password: DB_TEAM_TO_PROVIDE  # MSSQL example
+vault_server_db_port_password: DB_TEAM_TO_PROVIDE  # Oracle/Sybase example
 
 # SSH credentials for Sybase (if Sybase entries exist)
 vault_sybase_ssh_password: DB_TEAM_TO_PROVIDE

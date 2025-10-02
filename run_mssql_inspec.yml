@@ -2,7 +2,7 @@
 # MSSQL InSpec Compliance Scanning Playbook
 # Compatible with Ansible Automation Platform (AAP)
 - name: Execute InSpec MSSQL Compliance Scans
-  hosts: mssql_databases
+  hosts: mssql_servers
   gather_facts: yes
   strategy: "{{ execution_strategy | default('linear') }}"
   serial: "{{ batch_size | default(5) }}"
@@ -39,7 +39,7 @@
         msg: |
           Starting MSSQL Compliance Scans
           ================================
-          Total hosts in group: {{ groups['mssql_databases'] | length }}
+          Total servers in group: {{ groups['mssql_servers'] | length }}
           Results directory: {{ base_results_dir }}
           Timestamp: {{ scan_timestamp }}
           Debug mode: {{ enable_debug }}
@@ -63,23 +63,23 @@
       when: inspec_check.rc != 0
 
   tasks:
-    - name: Display current database being scanned
+    - name: Display current server being scanned
       debug:
-        msg: "Scanning {{ mssql_server }}:{{ mssql_port }}/{{ mssql_database }} (version {{ mssql_version }})"
+        msg: "Scanning {{ mssql_server }}:{{ mssql_port }} (version {{ mssql_version }}) - Server-level scan"
       when: enable_debug
 
-    - name: Execute MSSQL InSpec compliance scan for database
+    - name: Execute MSSQL InSpec compliance scan for server
       include_role:
         name: mssql_inspec
       vars:
-        # Pass all database-specific variables from inventory host
-        inspec_results_dir: "{{ base_results_dir }}/{{ mssql_server | replace('.', '_') }}_{{ mssql_database }}_{{ scan_timestamp }}"
+        # Pass all server-specific variables from inventory host
+        inspec_results_dir: "{{ base_results_dir }}/{{ mssql_server | replace('.', '_') }}_{{ mssql_port }}_{{ scan_timestamp }}"
         inspec_debug_mode: "{{ enable_debug | default(false) }}"
         generate_summary_report: true
         inspec_command_timeout: "{{ inspec_timeout }}"
-        # Database connection parameters come from inventory host variables:
-        # mssql_server, mssql_port, mssql_database, mssql_service,
-        # mssql_version, mssql_username, mssql_password
+        # Server connection parameters come from inventory host variables:
+        # mssql_server, mssql_port, mssql_version, mssql_username, mssql_password
+        # Note: InSpec scans all databases on the server, not individual databases
 
   post_tasks:
     - name: Generate consolidated report
@@ -99,7 +99,7 @@
               =====================================
               MSSQL Compliance Scan Complete
               =====================================
-              Total databases scanned: {{ groups['mssql_databases'] | length }}
+              Total servers scanned: {{ groups['mssql_servers'] | length }}
               Result files generated: {{ json_files.files | length }}
               Results location: {{ base_results_dir }}
 
@@ -129,7 +129,7 @@
           MSSQL compliance scans have been completed.
 
           Scan Details:
-          - Total databases: {{ groups['mssql_databases'] | length }}
+          - Total servers: {{ groups['mssql_servers'] | length }}
           - Timestamp: {{ scan_timestamp }}
           - Results: {{ base_results_dir }}
       when:
@@ -156,7 +156,7 @@
             job_id: "{{ job_id }}"
             project: "{{ project_name }}"
             scan_timestamp: "{{ scan_timestamp }}"
-            total_databases: "{{ groups['mssql_databases'] | length }}"
+            total_servers: "{{ groups['mssql_servers'] | length }}"
             results_location: "{{ base_results_dir }}"
             status: "completed"
             message: "MSSQL compliance scan completed successfully"

@@ -39,11 +39,12 @@ aks-gitops/
 │       ├── SYBASE15_ruby/  # ✅ With sample trusted.rb
 │       ├── SYBASE16_ruby/  # ✅ With sample trusted.rb
 │       └── SSH_keys/       # SSH key management
-├── run_mssql_inspec.yml    # MSSQL playbook (existing)
-├── run_oracle_inspec.yml   # Oracle playbook (NEW)
-├── run_sybase_inspec.yml   # Sybase playbook (NEW)
-├── run_compliance_scans.yml # Multi-platform playbook (NEW)
-└── convert_flatfile_to_inventory.py # Multi-platform converter (updated)
+├── run_mssql_inspec.yml    # MSSQL playbook (server-level)
+├── run_oracle_inspec.yml   # Oracle playbook (database-level)
+├── run_sybase_inspec.yml   # Sybase playbook (database-level)
+├── run_compliance_scans.yml # Multi-platform playbook
+├── convert_flatfile_to_inventory.yml # Ansible-native converter
+└── process_flatfile_line.yml # Line processing for converter
 ```
 
 ## 🎯 Platform-Specific Features
@@ -74,19 +75,19 @@ aks-gitops/
 Each platform uses its own flat file and inventory:
 
 ```bash
-# MSSQL Scanning
+# MSSQL Server Scanning (server-level, scans all databases)
 echo "MSSQL server01 db01 service 1433 2019" > mssql_databases.txt
-./convert_flatfile_to_inventory.py -i mssql_databases.txt -o mssql_inventory.yml --vault-template mssql_vault.yml
+ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=mssql_databases.txt" -e "inventory_output=mssql_inventory.yml" -e "vault_output=mssql_vault.yml"
 ansible-playbook -i mssql_inventory.yml run_mssql_inspec.yml -e @mssql_vault.yml
 
-# Oracle Scanning
+# Oracle Database Scanning (database-level)
 echo "ORACLE server01 orcl XE 1521 19c" > oracle_databases.txt
-./convert_flatfile_to_inventory.py -i oracle_databases.txt -o oracle_inventory.yml --vault-template oracle_vault.yml
+ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=oracle_databases.txt" -e "inventory_output=oracle_inventory.yml" -e "vault_output=oracle_vault.yml"
 ansible-playbook -i oracle_inventory.yml run_oracle_inspec.yml -e @oracle_vault.yml
 
-# Sybase Scanning
+# Sybase Database Scanning (database-level)
 echo "SYBASE server01 master SAP_ASE 5000 16" > sybase_databases.txt
-./convert_flatfile_to_inventory.py -i sybase_databases.txt -o sybase_inventory.yml --vault-template sybase_vault.yml
+ansible-playbook convert_flatfile_to_inventory.yml -e "flatfile_input=sybase_databases.txt" -e "inventory_output=sybase_inventory.yml" -e "vault_output=sybase_vault.yml"
 ansible-playbook -i sybase_inventory.yml run_sybase_inspec.yml -e @sybase_vault.yml
 ```
 
@@ -98,12 +99,24 @@ ORACLE oracleserver01 orcl XE 1521 19c
 SYBASE sybaseserver01 master SAP_ASE 5000 16
 ```
 
+**Important for MSSQL**:
+- Multiple entries with same `SERVER_NAME:PORT` → deduplicated to ONE inventory host
+- `DB_NAME` and `SERVICE_NAME` are placeholders (InSpec scans ALL databases on server)
+- Example:
+  ```
+  MSSQL server01 db1 svc1 1433 2019
+  MSSQL server01 db2 svc2 1433 2019
+  ```
+  Results in single host: `server01_1433`
+
 ## 🔒 Security Implementation
 
 ### Credential Management
 - **No credentials in flat files** ✅
 - **Platform-specific vault files** ✅
-- **Password lookup pattern**: `vault_{server}_{database}_{port}_password`
+- **Password lookup patterns**:
+  - MSSQL: `vault_{server}_{port}_password` (server-level, no database)
+  - Oracle/Sybase: `vault_{server}_{database}_{port}_password` (database-level)
 - **SSH credentials for Sybase**: `vault_sybase_ssh_password`, `vault_sybase_ssh_private_key`
 
 ### Original Script Compatibility

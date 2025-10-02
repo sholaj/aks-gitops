@@ -22,21 +22,30 @@
         db_port: "{{ line_parts[4] | int }}"
         db_version: "{{ line_parts[5] }}"
 
-    - name: Create unique host identifier
+    - name: Create unique host identifier (MSSQL uses server_port, others use server_database_port)
       set_fact:
-        host_id: "{{ (db_server + '_' + db_database + '_' + db_port | string).replace('.', '_').replace('-', '_') }}"
+        host_id: "{{ (db_server + '_' + db_port | string).replace('.', '_').replace('-', '_') if db_platform == 'MSSQL' else (db_server + '_' + db_database + '_' + db_port | string).replace('.', '_').replace('-', '_') }}"
 
     - name: Create password vault variable name
       set_fact:
         vault_password_var: "vault_{{ host_id }}_password"
 
-    - name: Add password to vault collection
+    - name: Check if password already exists (for MSSQL deduplication)
+      set_fact:
+        password_exists: "{{ vault_password_var in vault_passwords }}"
+
+    - name: Add password to vault collection (if not already present)
       set_fact:
         vault_passwords: "{{ vault_passwords | combine({vault_password_var: 'DB_TEAM_TO_PROVIDE'}) }}"
+      when: not password_exists
 
     - name: Process MSSQL database entry
       block:
-        - name: Create MSSQL host variables
+        - name: Check if MSSQL host already exists (deduplication)
+          set_fact:
+            mssql_host_exists: "{{ host_id in inventory_data.all.children.mssql_servers.hosts }}"
+
+        - name: Create MSSQL host variables (server-level, not database-level)
           set_fact:
             mssql_host_vars:
               mssql_server: "{{ db_server }}"
@@ -48,13 +57,20 @@
               mssql_host_id: "{{ host_id }}"
               database_platform: "mssql"
 
-        - name: Add MSSQL host to inventory
+        - name: Add MSSQL host to inventory (only if not already present)
           set_fact:
-            inventory_data: "{{ inventory_data | combine({'all': {'children': {'mssql_databases': {'hosts': (inventory_data.all.children.mssql_databases.hosts | combine({host_id: mssql_host_vars}))}}}}, recursive=true) }}"
+            inventory_data: "{{ inventory_data | combine({'all': {'children': {'mssql_servers': {'hosts': (inventory_data.all.children.mssql_servers.hosts | combine({host_id: mssql_host_vars}))}}}}, recursive=true) }}"
+          when: not mssql_host_exists
 
-        - name: Increment MSSQL count
+        - name: Increment MSSQL count (only for new hosts)
           set_fact:
             platform_counts: "{{ platform_counts | combine({'mssql': platform_counts.mssql + 1}) }}"
+          when: not mssql_host_exists
+
+        - name: Display deduplication message
+          debug:
+            msg: "⚠️  Skipping duplicate MSSQL entry: {{ db_server }}:{{ db_port }} (database: {{ db_database }}) - already processed"
+          when: mssql_host_exists and ansible_verbosity >= 0
 
       when: db_platform == 'MSSQL'
 

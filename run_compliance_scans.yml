@@ -41,9 +41,9 @@
           🚀 Multi-Platform Database Compliance Scans Starting
           ===================================================
           Total hosts: {{ ansible_play_hosts | length }}
-          MSSQL hosts: {{ groups.get('mssql_databases', []) | length }}
-          Oracle hosts: {{ groups.get('oracle_databases', []) | length }}
-          Sybase hosts: {{ groups.get('sybase_databases', []) | length }}
+          MSSQL servers: {{ groups.get('mssql_servers', []) | length }}
+          Oracle databases: {{ groups.get('oracle_databases', []) | length }}
+          Sybase databases: {{ groups.get('sybase_databases', []) | length }}
           Results directory: {{ base_results_dir }}
           Timestamp: {{ scan_timestamp }}
           Debug mode: {{ enable_debug }}
@@ -90,12 +90,12 @@
           {% endif %}
       when: enable_debug
 
-    # MSSQL Database Scanning
+    # MSSQL Server Scanning (server-level, not database-level)
     - name: Execute MSSQL InSpec compliance scan
       include_role:
         name: mssql_inspec
       vars:
-        inspec_results_dir: "{{ base_results_dir }}/{{ mssql_server | replace('.', '_') }}_{{ mssql_database }}_{{ scan_timestamp }}"
+        inspec_results_dir: "{{ base_results_dir }}/{{ mssql_server | replace('.', '_') }}_{{ mssql_port }}_{{ scan_timestamp }}"
         inspec_debug_mode: "{{ enable_debug | default(false) }}"
         generate_summary_report: true
         inspec_command_timeout: "{{ inspec_timeout }}"
@@ -138,10 +138,10 @@
         - name: Generate platform summary
           set_fact:
             platform_summary:
-              mssql_count: "{{ groups.get('mssql_databases', []) | length }}"
+              mssql_count: "{{ groups.get('mssql_servers', []) | length }}"
               oracle_count: "{{ groups.get('oracle_databases', []) | length }}"
               sybase_count: "{{ groups.get('sybase_databases', []) | length }}"
-              total_databases: "{{ ansible_play_hosts | length }}"
+              total_hosts: "{{ ansible_play_hosts | length }}"
               total_results: "{{ json_files.files | length }}"
           run_once: true
 
@@ -151,15 +151,15 @@
               =====================================
               Multi-Platform Compliance Scan Complete
               =====================================
-              MSSQL databases scanned: {{ platform_summary.mssql_count }}
+              MSSQL servers scanned: {{ platform_summary.mssql_count }}
               Oracle databases scanned: {{ platform_summary.oracle_count }}
               Sybase databases scanned: {{ platform_summary.sybase_count }}
-              Total databases: {{ platform_summary.total_databases }}
+              Total hosts: {{ platform_summary.total_hosts }}
               Result files generated: {{ platform_summary.total_results }}
               Results location: {{ base_results_dir }}
 
               Platform-specific file patterns:
-              - MSSQL: MSSQL_NIST_*_*.json
+              - MSSQL: MSSQL_NIST_*_*.json (server-level scans)
               - Oracle: ORACLE_NIST_*_*.json
               - Sybase: SYBASE_NIST_*_*.json
 
@@ -189,10 +189,10 @@
             job_id: "{{ job_id }}"
             project: "{{ project_name }}"
             scan_timestamp: "{{ scan_timestamp }}"
-            mssql_databases: "{{ platform_summary.mssql_count }}"
+            mssql_servers: "{{ platform_summary.mssql_count }}"
             oracle_databases: "{{ platform_summary.oracle_count }}"
             sybase_databases: "{{ platform_summary.sybase_count }}"
-            total_databases: "{{ platform_summary.total_databases }}"
+            total_hosts: "{{ platform_summary.total_hosts }}"
             total_results: "{{ platform_summary.total_results }}"
             results_location: "{{ base_results_dir }}"
             status: "completed"
@@ -213,11 +213,11 @@
 # ansible-playbook -i inventory.yml run_compliance_scans.yml -e @vault.yml --vault-password-file .vaultpass
 #
 # Platform-specific scanning:
-# ansible-playbook -i inventory.yml run_compliance_scans.yml --limit "mssql_databases"
+# ansible-playbook -i inventory.yml run_compliance_scans.yml --limit "mssql_servers"
 # ansible-playbook -i inventory.yml run_compliance_scans.yml --limit "oracle_databases"
 # ansible-playbook -i inventory.yml run_compliance_scans.yml --limit "sybase_databases"
 #
 # Mixed platform example inventory groups:
-# [mssql_databases]
-# [oracle_databases]
-# [sybase_databases]
+# [mssql_servers]      # Server-level scanning (InSpec scans all databases on server)
+# [oracle_databases]   # Database-level scanning
+# [sybase_databases]   # Database-level scanning

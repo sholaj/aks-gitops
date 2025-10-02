@@ -18,7 +18,7 @@
     inventory_data:
       all:
         children:
-          mssql_databases:
+          mssql_servers:
             hosts: {}
           oracle_databases:
             hosts: {}
