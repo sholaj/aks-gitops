@@ -23,6 +23,7 @@
       copy:
         content: "{{ item.stdout }}"
         dest: "{{ inspec_results_dir }}/{{ sybase_result_file_name }}.json"
+      delegate_to: "{{ inspec_delegate_host }}"
       when: sybase_inspec_status is defined and sybase_inspec_status in ['passed', 'failed', 'skipped']
 
     - name: Log successful Sybase execution
@@ -37,6 +38,7 @@
         content: |
           {"controls":[{"timestamp":"","hostname":"{{ sybase_server }}","database":"{{ sybase_database }}","port":"{{ sybase_port }}","DBVersion":"{{ sybase_version }}","id":"Cannot connect to Sybase database. One or more parameters such as Platform, Host Name, Database Name, Service Name, Port Number, Database Version may be incorrect. SSH connection may have failed.","profile_id":"N/A","profile_sha256":"N/A","status":"Unreachable","code_desc":"Cannot connect to Sybase","statistics":{"duration":0},"version":"N/A"}]}
         dest: "{{ inspec_results_dir }}/{{ sybase_result_file_name }}.json"
+      delegate_to: "{{ inspec_delegate_host }}"
       when:
         - item.rc != 0 or (sybase_inspec_status is not defined or sybase_inspec_status not in ['passed', 'failed', 'skipped'])
 

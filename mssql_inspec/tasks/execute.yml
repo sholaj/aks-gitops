@@ -28,4 +28,3 @@
   loop_control:
     index_var: idx
     label: "Processing result {{ idx + 1 }}"
-  delegate_to: "{{ inspec_delegate_host }}"

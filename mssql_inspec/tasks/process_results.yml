@@ -22,6 +22,7 @@
       copy:
         content: "{{ item.stdout }}"
         dest: "{{ inspec_results_dir }}/{{ result_file_name }}.json"
+      delegate_to: "{{ inspec_delegate_host }}"
       when: inspec_status is defined and inspec_status in ['passed', 'failed', 'skipped']
 
     - name: Log successful execution
@@ -36,6 +37,7 @@
         content: |
           {"controls":[{"timestamp":"","hostname":"{{ mssql_server }}","database":"{{ mssql_database }}","port":"{{ mssql_port }}","DBVersion":"{{ mssql_version }}","id":"Cannot connect to database. One or more parameters such as Platform, Host Name, Database Name, Service Name, Port Number, Database Version may be incorrect.","profile_id":"N/A","profile_sha256":"N/A","status":"Unreachable","code_desc":"Cannot connect","statistics":{"duration":0},"version":"N/A"}]}
         dest: "{{ inspec_results_dir }}/{{ result_file_name }}.json"
+      delegate_to: "{{ inspec_delegate_host }}"
       when:
         - item.rc != 0 or (inspec_status is not defined or inspec_status not in ['passed', 'failed', 'skipped'])
 
