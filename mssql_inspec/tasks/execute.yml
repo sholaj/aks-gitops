@@ -3,9 +3,6 @@
 
 - name: Execute InSpec controls for each file (with timeout)
   shell: |
-    export PATH="{{ mssql_environment.PATH }}"
-    export LD_LIBRARY_PATH="{{ mssql_environment.LD_LIBRARY_PATH }}"
-    export INSPEC_BACKEND="{{ mssql_environment.INSPEC_BACKEND }}"
     /usr/bin/inspec exec {{ item.path }} \
       --input usernm={{ mssql_username }} \
               passwd={{ mssql_password }} \
@@ -16,6 +13,11 @@
       --no-color
   args:
     executable: /bin/bash
+  environment:
+    PATH: "{{ mssql_environment.PATH }}"
+    LD_LIBRARY_PATH: "{{ mssql_environment.LD_LIBRARY_PATH }}"
+    INSPEC_BACKEND: "{{ mssql_environment.INSPEC_BACKEND }}"
+
   register: inspec_results
   loop: "{{ control_files.files }}"
   loop_control:

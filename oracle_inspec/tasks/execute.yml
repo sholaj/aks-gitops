@@ -3,12 +3,6 @@
 
 - name: Execute Oracle InSpec controls for each file (with timeout)
   shell: |
-    export PATH="{{ oracle_environment.PATH }}"
-    export LD_LIBRARY_PATH="{{ oracle_environment.LD_LIBRARY_PATH }}"
-    export ORACLE_HOME="{{ oracle_environment.ORACLE_HOME }}"
-    export TNS_ADMIN="{{ oracle_environment.TNS_ADMIN }}"
-    export INSPEC_BACKEND="{{ oracle_environment.INSPEC_BACKEND }}"
-    export NLS_LANG="{{ oracle_environment.NLS_LANG }}"
     /usr/bin/inspec exec {{ item.path }} \
       --input usernm={{ oracle_username }} \
               passwd={{ oracle_password }} \
@@ -19,6 +13,13 @@
       --no-color
   args:
     executable: /bin/bash
+  environment:
+    PATH: "{{ oracle_environment.PATH }}"
+    LD_LIBRARY_PATH: "{{ oracle_environment.LD_LIBRARY_PATH }}"
+    ORACLE_HOME: "{{ oracle_environment.ORACLE_HOME }}"
+    TNS_ADMIN: "{{ oracle_environment.TNS_ADMIN }}"
+    INSPEC_BACKEND: "{{ oracle_environment.INSPEC_BACKEND }}"
+    NLS_LANG: "{{ oracle_environment.NLS_LANG }}"
   register: oracle_inspec_results
   loop: "{{ oracle_control_files.files }}"
   loop_control:
