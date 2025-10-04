@@ -4,11 +4,11 @@
 - name: Execute Oracle InSpec controls for each file (with timeout)
   shell: |
     /usr/bin/inspec exec {{ item.path }} \
-      --input usernm={{ oracle_username }} \
-              passwd={{ oracle_password }} \
-              hostnm={{ oracle_server }} \
-              servicenm={{ oracle_service | default('') }} \
-              port={{ oracle_port }} \
+      --input usernm='{{ oracle_username }}' \
+              passwd='{{ oracle_password }}' \
+              hostnm='{{ oracle_server }}' \
+              servicenm='{{ oracle_service | default('') }}' \
+              port='{{ oracle_port }}' \
       --reporter=json-min \
       --no-color
   args:

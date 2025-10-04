@@ -6,11 +6,11 @@
     /usr/bin/inspec exec {{ item.path }} \
       --ssh://{{ sybase_ssh_user }}:{{ sybase_ssh_password }}@{{ sybase_server }} \
       -o {{ sybase_ssh_key_path }} \
-      --input usernm={{ sybase_username }} \
-              passwd={{ sybase_password }} \
-              hostnm={{ sybase_server }} \
-              servicenm={{ sybase_service | default('') }} \
-              port={{ sybase_port }} \
+      --input usernm='{{ sybase_username }}' \
+              passwd='{{ sybase_password }}' \
+              hostnm='{{ sybase_server }}' \
+              servicenm='{{ sybase_service | default('') }}' \
+              port='{{ sybase_port }}' \
       --reporter=json-min \
       --no-color
   args:
@@ -36,11 +36,11 @@
 - name: Execute Sybase InSpec controls directly (non-SSH mode)
   shell: |
     /usr/bin/inspec exec {{ item.path }} \
-      --input usernm={{ sybase_username }} \
-              passwd={{ sybase_password }} \
-              hostnm={{ sybase_server }} \
-              servicenm={{ sybase_service | default('') }} \
-              port={{ sybase_port }} \
+      --input usernm='{{ sybase_username }}' \
+              passwd='{{ sybase_password }}' \
+              hostnm='{{ sybase_server }}' \
+              servicenm='{{ sybase_service | default('') }}' \
+              port='{{ sybase_port }}' \
       --reporter=json-min \
       --no-color
   args:

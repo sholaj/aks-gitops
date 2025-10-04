@@ -4,11 +4,11 @@
 - name: Execute InSpec controls for each file (with timeout)
   shell: |
     /usr/bin/inspec exec {{ item.path }} \
-      --input usernm={{ mssql_username }} \
-              passwd={{ mssql_password }} \
-              hostnm={{ mssql_server }} \
-              servicenm={{ mssql_service | default('') }} \
-              port={{ mssql_port }} \
+      --input usernm='{{ mssql_username }}' \
+              passwd='{{ mssql_password }}' \
+              hostnm='{{ mssql_server }}' \
+              servicenm='{{ mssql_service | default('') }}' \
+              port='{{ mssql_port }}' \
       --reporter=json-min \
       --no-color
   args:
