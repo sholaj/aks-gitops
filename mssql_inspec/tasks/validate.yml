@@ -27,6 +27,7 @@
   register: inspec_check
   changed_when: false
   failed_when: false
+  delegate_to: "{{ inspec_delegate_host }}"
 
 - name: Fail if InSpec is not installed
   fail:
@@ -37,6 +38,7 @@
   stat:
     path: "{{ role_path }}/files/MSSQL{{ mssql_version }}_ruby"
   register: version_dir_check
+  delegate_to: "{{ inspec_delegate_host }}"
 
 - name: Fail if MSSQL version directory doesn't exist
   fail:

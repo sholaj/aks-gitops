@@ -1,0 +1,156 @@
+#!/bin/ksh
+# Usage:  NIST.ksh [Platform] [Server_Name] [Database_Name] [Database_Service_Name] [Port_Number] [Database_Version]
+#         NIST.ksh [Full Path to Custom Inventory File Name]
+#         NIST.ksh
+# In the last case with no parameters entered into the script, a default inventory file in $script_dir will be used. The name of the default file is: inventory.txt
+# Edit inventory.txt to include the databases for the default run of this script
+# Enter the full path directory to $script_dir on the next line:
+export script_dir=~/NIST_FILES
+parallelism=3                    # Run database scans in parallel. Do not choose a high number. This can effect performance on server. Maximum is 12.
+
+#The next line is the database user that will run the NIST scans:
+export user=dbmaint
+
+platform=$1
+servername=$2
+dbname=$3
+servicenm=$4
+portnum=$5
+dbversion=$6
+
+export now=$(date +%Y_%m%d_%H%M%S)
+export touch_time=$(date +%Y%m%d%H%M.%S)
+export splunk_time=$(date "+%Y-%m-%d %H:%M:%S")
+export PATH=/usr/local/oracle/NIST_FILES/mssql-tools/bin:/tools/ver/sybase/OCS-16_0/bin:$PATH
+export LD_LIBRARY_PATH=/tools/ver/oracle-19.16.0.0-64
+
+function usage
+{
+    print 'The script is called with six parameters to run for an individual database:'
+    print '$0 [Platform] [Server_Name] [Database_Name] [Database_Service_Name] [Port_Number] [Database_Version]"'
+    print "The script is run with zero parameters to run for multiple databases from the default inventory file $script_dir/inventory.txt"
+    print "The script is run with one parameter to run for multiple databases from an inventory file of your choosing."
+    print "Enter full path of the inventory file to read from."
+    print '$0 [Full path of custom inventory file]"'
+}
+
+if [[ $# -ne 0 ]] && [[ $# -ne 1 ]] && [[ $# -ne 6 ]]
+then
+    print 'Must pass zero, one or six parameters into this script.'
+    print "Zero input parameters means that the script will run against the default inventory file: $script_dir/inventory.txt"
+    print 'One input parameter is for a custom specified inventory file or databases to run the NIST scans.'
+    print 'Six input parameters is to run the NIST scan on one particular database.'
+    usage
+    exit 1
+fi
+
+if [[ ! -d $script_dir ]]
+then
+    print 'The directory specified as script_dir in the script does not exist.'
+    print "The value of script_dir in the script is: $script_dir"
+    exit 2
+fi
+
+if [[ $# -eq 0 ]]
+then
+    inventory_file=$script_dir/inventory.txt
+    if [[ ! -f $inventory_file ]]
+    then
+        print "The default inventory file inventory.txt does not exist in the script directory $script_dir or the OS user running script lacks permission to read the file."
+        exit 3
+    fi
+fi
+
+if [[ $# -eq 1 ]]
+then
+    inventory_file=$platform
+    if [[ ! -f $inventory_file ]]
+    then
+        print 'When one parameter is entered into the script, it must be the full path to a custom inventory file.'
+        print "The file you entered was: $inventory_file"
+        print 'This file does not exist or the OS user does not have permission to read the file.'
+        exit 4
+    fi
+fi
+
+if [[ $# -eq 6 ]]
+then
+    inventory_file=$script_dir/inventory_file_${now}_$$.txt
+    print "$platform $servername $dbname $servicenm $portnum $dbversion" > $inventory_file
+fi
+
+egrep -i 'ORACLE|MSSQL|SYBASE' $inventory_file > /tmp/inventory_$$_1.txt
+sed -e 's/\t/ /g' -e 's/[ ][ ]*/ /g' /tmp/inventory_$$_1.txt | awk '{print toupper($1),$2,$3,$4,$5,$6}' > ${inventory_file}
+rm -f /tmp/inventory_$$_1.txt
+
+if [[ -z $parallelism ]]
+then
+    parallelism=3
+else
+    print - $parallelism | grep '[^0-9]' > /dev/null
+    if [[ $? -eq 0 ]]
+    then
+        print "Must enter a number between 1 and 12 for parallelism. You entered the value of: $parallelism"
+        exit 5
+    fi
+    print - $parallelism | grep '\<[0-9]\{1,2\}\>' > /dev/null
+    if [[ $? -ne 0 ]]
+    then
+        print 'Not a valid number for parallelism. Must enter a number between 1 and 12.'
+        exit 6
+    fi
+fi
+
+if [[ $parallelism -lt 1 ]] || [[ $parallelism -gt 12 ]]
+then
+    print "parallelism variable out of range. Must enter a number between 1 and 12."
+    exit 7
+fi
+
+# Run Parallelism when using inventory file
+sed -e 's/'//$script_dir/NIST_for_db.ksh /g' -e 's/$/ \&/g \&/g' $inventory_file > $script_dir/run_NIST_for_db_first_step_$$.txt
+msed -e 's/'/NIST_for_db.ksh /g' -e 's/$/ \&/g' $inventory_file > $script_dir/run_NIST_for_db_first_step_$$.txt
+sed "1-$parallelism i wait" $script_dir/run_NIST_for_db_first_step_$$.txt > $script_dir/run_NIST_for_db_second_step_$$.txt
+sed '1d' $script_dir/run_NIST_for_db_second_step_$$.txt > $script_dir/run_NIST_for_db_first_step_$$.txt
+sed '$a wait' $script_dir/run_NIST_for_db_first_step_$$.txt > $script_dir/run_NIST_for_db_second_step_$$.txt
+mv $script_dir/run_NIST_for_db_second_step_$$.txt $script_dir/run_NIST_parallelism_${now}_$$.ksh
+rm -f $script_dir/run_NIST_for_db_second_step_$$.txt $script_dir/run_NIST_for_db_first_step_$$.txt
+chmod 755 $script_dir/run_NIST_parallelism_${now}_$$.ksh
+cp $script_dir/run_NIST_parallelism_${now}_$$.ksh /tmp/error.txt
+ksh $script_dir/run_NIST_parallelism_${now}_$$.ksh
+wait
+###################
+
+included_platforms=$(awk '{print $1}' $inventory_file | sort -u)
+for a_platform in $included_platforms
+do
+    log_dir=~/NIST_FILES/backup/${a_platform}NIST        # The location where the output files of the NIST scans are placed. This is the location where Splunk picks up the files.
+    if [[ ! -d $log_dir ]]
+    then
+        print "The Splunk file pickup log directory specified for Database Platform $a_platform does not exist."
+        print "The value of log_dir in the script is: $log_dir"
+        continue
+    fi
+    
+    for a_temp_dir in $(ls -1d $script_dir/${a_platform}_NIST_${now}_*_temp_files)
+    do
+        if [[ -d $a_temp_dir ]]
+        then
+            rm -f $a_temp_dir/${a_platform}_NIST_*_${now}_*.out
+        fi
+        
+        touch -t "$touch_time" $a_temp_dir/*.json
+        mv $a_temp_dir/*.json $log_dir
+        rm -rf $a_temp_dir
+    done
+done
+
+rm -f $script_dir/run_NIST_parallelism_${now}_$$.ksh
+
+if [[ $# -eq 6 ]]
+then
+    # Remove inventory file for the single database run
+    rm -f $script_dir/inventory_file_${now}_$$.txt
+fi
+
+exit 0

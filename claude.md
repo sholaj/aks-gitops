@@ -6,36 +6,18 @@ You are a DevOps engineer. You running a test of the run_mssql_inspec.yml playbo
 You need to ensure that the playbook runs successfully and configures the MSSQL server as expected.
 You have access to the following resources:
 - The Ansible playbook file: run_mssql_inspec.yml 
-Here is error output from the playbook run:
-```
-TASK [mssql : Ensure MSSQL is started and enabled] *****************************
+- ensure the shell is bash
+- ensure the LD_LIBRARY_PATH and PATH environment variables are set correctly for Oracle and Sybase tools. and mssql-tools
+- RE
+
+
+```sh
+bash-4.4$ export LD_LIBRARY_PATH=./tools/ver/oracle-19.16.0.0-64
+bash-4.4$ export PATH=/opt/mssql-tools/bin:/tools/ver/sybase/OCS-16_0/bin:$PATH
+bash-4.4$ /usr/bin/inspec exec trusted.rb --input usernm='nist_scan_user' passwd='Pa$$w0rd!' hostnm='GDCTWVC0007.uatcorp.uatstatestr.local' servicenm='default' port='1733' --reporter=json-min
+[2025-10-04T21:12:28+00:00] WARN: DEPRECATION: The `default` option for inputs is being replaced by `value` - please use it instead. attribute name: 'Inspec::Input' (used at trusted.rb:10)
+{"controls":[{"id":"2.01","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"},{"id":"2.02","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"},{"id":"2.03","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"},{"id":"2.04","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"},{"id":"2.05","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"},{"id":"2.06","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"},{"id":"2.09","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"},{"id":"2.10","profile_id":"tests from trusted.rb","profile_sha256":"59019044f03fff5410c677d4f5c1c57ddd1616e74bbf7d79377ab95efaa135fe","status":"failed","code_desc":"SQL ResultSet rows.first.Results is expected to eq \"COMPLIANT\"","message":"\nexpected: \"COMPLIANT\"\n     got: nil\n\n(compared using ==)\n"}],"statistics":{"duration":0.216293811}}bash-4.4$
 
 ```
-TASK [mssql_inspec : Setup directories and find control files] ***************
-included: /auto/home/p882789/aks-gitops-main/mssql_inspec/tasks/setup.yml for GDCTWC0007_1733
 
-TASK [mssql_inspec : Create results directory] *******************************
-changed: [GDCTWC0007_1733 -> localhost]
-
-TASK [mssql_inspec : Create temporary working directory] *********************
-changed: [GDCTWC0007_1733 -> localhost]
-
-TASK [mssql_inspec : Find all Ruby control files for specified MSSQL version] ***
-ok: [GDCTWC0007_1733 -> localhost]
-
-TASK [mssql_inspec : Display control files to be executed] *******************
-skipping: [GDCTWC0007_1733]
-
-TASK [mssql_inspec : Execute InSpec controls and process results] ************
-fatal: [GDCTWC0007_1733]: FAILED! => {"reason": "delegate_to is not a valid attribute for a TaskInclude\n\nThe error appears to be in '/auto/home/p882789/aks-gitops-main/mssql_inspec/tasks/execute.yml': line 25, column 3, but may\nbe elsewhere in the file depending on the exact syntax problem.\n\nThe offending line appears to be:\n\n- name: Process InSpec results\n  ^ here\n"}
-
-PLAY RECAP *******************************************************************
-GDCTWC0007_1733          : ok=12   changed=2   unreachable=0   failed=1   skipped=6   rescued=0   ignored=0
-
-lcptlvc0005 28: 45:38 +0000 (0:00:00.054)       0:01:23.501 ********
-
-
-Patch role:mssql_inspec, task: Execute InSpec controls and process results failed. For more details, see the error message above.
-The error message indicates that there is an issue with the 'delegate_to' attribute in the task include.
-Please review the task definition in 'mssql_inspec/tasks/execute.yml' and correct the syntax error.
-Once the issue is resolved, re-run the playbook to ensure it completes successfully
+Task: Identify and resolve the issues causing the playbook to fail. Ensure the inspec tests pass successfully against the MSSQL server.
