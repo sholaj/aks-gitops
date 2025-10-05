@@ -11,6 +11,7 @@
       username: "{{ oracle_username }}"
       password: "{{ oracle_password }}"
       version: "{{ oracle_version }}"
+  no_log: true
 
 - name: Validate required Oracle parameters
   assert:

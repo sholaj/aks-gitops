@@ -13,6 +13,7 @@
       version: "{{ sybase_version }}"
       ssh_enabled: "{{ sybase_use_ssh | default(true) }}"
       ssh_user: "{{ sybase_ssh_user | default('oracle') }}"
+  no_log: true
 
 - name: Validate required Sybase parameters
   assert:
@@ -34,6 +35,7 @@
     fail_msg: "Missing required SSH parameters for Sybase connection"
     success_msg: "SSH parameters validated successfully"
   when: sybase_use_ssh | default(true)
+  no_log: true
 
 - name: Check if InSpec is installed
   command: which inspec

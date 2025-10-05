@@ -10,6 +10,7 @@
       username: "{{ mssql_username }}"
       password: "{{ mssql_password }}"
       version: "{{ mssql_version }}"
+  no_log: true
 
 - name: Validate required parameters
   assert:
