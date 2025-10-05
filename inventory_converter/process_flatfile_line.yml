@@ -126,7 +126,7 @@
 
     - name: Display processed entry (debug mode)
       debug:
-        msg: "✅ Processed {{ db_platform }} {{ db_server }}:{{ db_port }}/{{ db_database }} ({{ db_version }}) as {{ host_id }}"
+        msg: "[OK] Processed {{ db_platform }} {{ db_server }}:{{ db_port }}/{{ db_database }} ({{ db_version }}) as {{ host_id }}"
       when: ansible_verbosity >= 1
 
   when: line_parts | length == 6

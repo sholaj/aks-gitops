@@ -106,9 +106,9 @@
 
           Files Generated:
           ================
-          Inventory: {{ output_file }} ✅
+          Inventory: {{ output_file }} [OK]
           {% if generate_vault | bool %}
-          Vault: {{ vault_file }} ✅
+          Vault: {{ vault_file }} [OK]
           {% endif %}
 
           Usage Examples:
