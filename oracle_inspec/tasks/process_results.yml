@@ -14,7 +14,8 @@
 
 - name: Parse Oracle InSpec result status (matching original script logic)
   set_fact:
-    oracle_inspec_status: "{{ (item.stdout | regex_search('\"status\":\"([^\"]+)\"', '\\1')) | default('unknown') }}"
+    # regex_search returns a list, so we take first element or default to 'unknown'
+    oracle_inspec_status: "{{ (item.stdout | regex_search('\"status\":\"([^\"]+)\"', '\\1') | first) | default('unknown') }}"
   ignore_errors: true
 
 - name: Handle successful Oracle InSpec execution
