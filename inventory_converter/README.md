@@ -2,7 +2,7 @@
 
 Ansible-native converter for transforming database flat files into Ansible inventory and vault files.
 
-## 📁 Directory Structure
+## [DIR] Directory Structure
 
 ```
 inventory_converter/
@@ -13,7 +13,7 @@ inventory_converter/
 └── README.md                           # This file
 ```
 
-## 🎯 Purpose
+## [TARGET] Purpose
 
 Converts a 6-field flat file format into:
 - **Ansible inventory** with platform-specific groups
@@ -25,7 +25,7 @@ Converts a 6-field flat file format into:
 - **Oracle** - Database-level scanning
 - **Sybase** - Database-level scanning with SSH support
 
-## 🚀 Usage
+## [USAGE] Usage
 
 ### Basic Usage
 
@@ -53,7 +53,7 @@ ansible-playbook convert_flatfile_to_inventory.yml \
 | `username` | `nist_scan_user` | Default database username |
 | `create_vault` | `true` | Generate vault file |
 
-## 📝 Input Format
+## [FORMAT] Input Format
 
 **6-field format (NO credentials):**
 ```
@@ -78,7 +78,7 @@ MSSQL server01 db2 svc2 1433 2019
 ```
 → Results in **one** inventory host: `server01_1433`
 
-## 📤 Output Structure
+## [OUTPUT] Output Structure
 
 ### Inventory File
 
@@ -124,7 +124,7 @@ vault_sybase_ssh_private_key: |
   -----END OPENSSH PRIVATE KEY-----
 ```
 
-## 🧪 Testing
+## [TEST] Testing
 
 ```bash
 # Create test flat file
@@ -148,7 +148,7 @@ ansible-inventory -i ../test_inventory.yml --graph
 
 **Expected output**: 3 hosts (2 MSSQL servers deduplicated from 3 entries, 1 Oracle, 1 Sybase)
 
-## 🔧 Integration
+## [CONFIG] Integration
 
 ### With MSSQL Playbook
 
@@ -162,7 +162,7 @@ ansible-playbook -i inventory.yml ../run_mssql_inspec.yml -e @vault.yml
 ansible-playbook -i inventory.yml ../run_compliance_scans.yml -e @vault.yml
 ```
 
-## 📚 See Also
+## [DOCS] See Also
 
 - [ANSIBLE_CONVERTER_IMPLEMENTATION.md](../ANSIBLE_CONVERTER_IMPLEMENTATION.md) - Detailed implementation docs
 - [MULTI_PLATFORM_IMPLEMENTATION.md](../MULTI_PLATFORM_IMPLEMENTATION.md) - Multi-platform overview
