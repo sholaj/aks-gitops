@@ -33,3 +33,9 @@ corrected_*
 # Backup files
 *_backup.*
 *.bak
+
+# Claude AI assistant files
+claude.md
+CLAUDE.md
+categories/
+categories/**
