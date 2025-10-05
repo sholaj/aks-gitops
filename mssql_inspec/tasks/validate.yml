@@ -22,6 +22,7 @@
       - mssql_password is defined
       - mssql_version is defined
     fail_msg: "Required MSSQL connection parameters are missing"
+  no_log: true
 
 - name: Check if InSpec is installed
   command: which inspec

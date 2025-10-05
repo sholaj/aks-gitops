@@ -26,6 +26,7 @@
       - sybase_password is defined and sybase_password | length > 0
     fail_msg: "Missing required Sybase connection parameters"
     success_msg: "All Sybase parameters validated successfully"
+  no_log: true
 
 - name: Validate SSH parameters (when SSH is enabled)
   assert:

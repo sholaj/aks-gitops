@@ -24,6 +24,7 @@
       - oracle_password is defined and oracle_password | length > 0
     fail_msg: "Missing required Oracle connection parameters"
     success_msg: "All Oracle parameters validated successfully"
+  no_log: true
 
 - name: Check if InSpec is installed
   command: which inspec
