@@ -11,15 +11,21 @@
     - inspec_results is defined
   delegate_to: "{{ inspec_delegate_host }}"
 
-- name: Display summary report location
-  debug:
-    msg: |
-      [OK] Summary report generated
-      Location: {{ summary_report_result.dest }}
-      Server: {{ mssql_server }}:{{ mssql_port }}
+- name: Read summary report content
+  slurp:
+    src: "{{ summary_report_result.dest }}"
+  register: summary_report_content
   when:
     - summary_report_result is defined
     - summary_report_result.dest is defined
+  delegate_to: "{{ inspec_delegate_host }}"
+
+- name: Display summary report
+  debug:
+    msg: "{{ summary_report_content.content | b64decode }}"
+  when:
+    - summary_report_content is defined
+    - summary_report_content.content is defined
 
 - name: Clean up temporary directory
   file:

@@ -12,16 +12,21 @@
   ignore_errors: true
   delegate_to: "{{ inspec_delegate_host }}"
 
-- name: Display Sybase summary report location
-  debug:
-    msg: |
-      [OK] Sybase summary report generated
-      Location: {{ sybase_summary_report_result.dest }}
-      Server: {{ sybase_server }}:{{ sybase_port }}
-      Database: {{ sybase_database }}
+- name: Read Sybase summary report content
+  slurp:
+    src: "{{ sybase_summary_report_result.dest }}"
+  register: sybase_summary_content
   when:
     - sybase_summary_report_result is defined
     - sybase_summary_report_result.dest is defined
+  delegate_to: "{{ inspec_delegate_host }}"
+
+- name: Display Sybase summary report
+  debug:
+    msg: "{{ sybase_summary_content.content | b64decode }}"
+  when:
+    - sybase_summary_content is defined
+    - sybase_summary_content.content is defined
 
 - name: Send Sybase results to Splunk (if enabled)
   include_tasks: splunk_integration.yml

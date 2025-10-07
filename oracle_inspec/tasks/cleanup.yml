@@ -12,16 +12,21 @@
   ignore_errors: true
   delegate_to: "{{ inspec_delegate_host }}"
 
-- name: Display Oracle summary report location
-  debug:
-    msg: |
-      [OK] Oracle summary report generated
-      Location: {{ oracle_summary_report_result.dest }}
-      Server: {{ oracle_server }}:{{ oracle_port }}
-      Database: {{ oracle_database }}
+- name: Read Oracle summary report content
+  slurp:
+    src: "{{ oracle_summary_report_result.dest }}"
+  register: oracle_summary_content
   when:
     - oracle_summary_report_result is defined
     - oracle_summary_report_result.dest is defined
+  delegate_to: "{{ inspec_delegate_host }}"
+
+- name: Display Oracle summary report
+  debug:
+    msg: "{{ oracle_summary_content.content | b64decode }}"
+  when:
+    - oracle_summary_content is defined
+    - oracle_summary_content.content is defined
 
 - name: Send Oracle results to Splunk (if enabled)
   include_tasks: splunk_integration.yml
