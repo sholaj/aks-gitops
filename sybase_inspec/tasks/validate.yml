@@ -1,41 +1,41 @@
 ---
 # Sybase parameter validation tasks
 
-- name: Set Sybase database connection parameters
-  set_fact:
-    sybase_connection:
-      server: "{{ sybase_server }}"
-      port: "{{ sybase_port }}"
-      database: "{{ sybase_database }}"
-      service: "{{ sybase_service | default('') }}"
-      username: "{{ sybase_username }}"
-      password: "{{ sybase_password }}"
-      version: "{{ sybase_version }}"
-      ssh_enabled: "{{ sybase_use_ssh | default(true) }}"
-      ssh_user: "{{ sybase_ssh_user | default('oracle') }}"
-  no_log: true
+- name: Handle sensitive Sybase connection parameters
+  block:
+    - name: Set Sybase database connection parameters
+      set_fact:
+        sybase_connection:
+          server: "{{ sybase_server }}"
+          port: "{{ sybase_port }}"
+          database: "{{ sybase_database }}"
+          service: "{{ sybase_service | default('') }}"
+          username: "{{ sybase_username }}"
+          password: "{{ sybase_password }}"
+          version: "{{ sybase_version }}"
+          ssh_enabled: "{{ sybase_use_ssh | default(true) }}"
+          ssh_user: "{{ sybase_ssh_user | default('oracle') }}"
 
-- name: Validate required Sybase parameters
-  assert:
-    that:
-      - sybase_server is defined and sybase_server | length > 0
-      - sybase_port is defined and sybase_port | int > 0
-      - sybase_database is defined and sybase_database | length > 0
-      - sybase_version is defined and sybase_version | length > 0
-      - sybase_username is defined and sybase_username | length > 0
-      - sybase_password is defined and sybase_password | length > 0
-    fail_msg: "Missing required Sybase connection parameters"
-    success_msg: "All Sybase parameters validated successfully"
-  no_log: true
+    - name: Validate required Sybase parameters
+      assert:
+        that:
+          - sybase_server is defined and sybase_server | length > 0
+          - sybase_port is defined and sybase_port | int > 0
+          - sybase_database is defined and sybase_database | length > 0
+          - sybase_version is defined and sybase_version | length > 0
+          - sybase_username is defined and sybase_username | length > 0
+          - sybase_password is defined and sybase_password | length > 0
+        fail_msg: "Missing required Sybase connection parameters"
+        success_msg: "All Sybase parameters validated successfully"
 
-- name: Validate SSH parameters (when SSH is enabled)
-  assert:
-    that:
-      - sybase_ssh_user is defined and sybase_ssh_user | length > 0
-      - sybase_ssh_password is defined and sybase_ssh_password | length > 0
-    fail_msg: "Missing required SSH parameters for Sybase connection"
-    success_msg: "SSH parameters validated successfully"
-  when: sybase_use_ssh | default(true)
+    - name: Validate SSH parameters (when SSH is enabled)
+      assert:
+        that:
+          - sybase_ssh_user is defined and sybase_ssh_user | length > 0
+          - sybase_ssh_password is defined and sybase_ssh_password | length > 0
+        fail_msg: "Missing required SSH parameters for Sybase connection"
+        success_msg: "SSH parameters validated successfully"
+      when: sybase_use_ssh | default(true)
   no_log: true
 
 - name: Check if InSpec is installed
