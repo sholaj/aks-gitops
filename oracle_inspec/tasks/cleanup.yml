@@ -1,32 +1,27 @@
 ---
 # Oracle cleanup and reporting tasks
 
-- name: Generate Oracle summary report
-  template:
-    src: oracle_summary_report.j2
-    dest: "{{ inspec_results_dir }}/oracle_summary_{{ ansible_date_time.epoch }}.txt"
-  register: oracle_summary_report_result
+- name: Generate and display Oracle summary report
+  block:
+    - name: Generate Oracle summary report
+      template:
+        src: oracle_summary_report.j2
+        dest: "{{ inspec_results_dir }}/oracle_summary_{{ ansible_date_time.epoch }}.txt"
+      register: oracle_summary_report_result
+
+    - name: Read Oracle summary report content
+      slurp:
+        src: "{{ oracle_summary_report_result.dest }}"
+      register: oracle_summary_content
+
+    - name: Display Oracle summary report
+      debug:
+        msg: "{{ oracle_summary_content.content | b64decode }}"
   when:
     - generate_summary_report | default(true)
     - oracle_inspec_results is defined
   ignore_errors: true
   delegate_to: "{{ inspec_delegate_host }}"
-
-- name: Read Oracle summary report content
-  slurp:
-    src: "{{ oracle_summary_report_result.dest }}"
-  register: oracle_summary_content
-  when:
-    - oracle_summary_report_result is defined
-    - oracle_summary_report_result.dest is defined
-  delegate_to: "{{ inspec_delegate_host }}"
-
-- name: Display Oracle summary report
-  debug:
-    msg: "{{ oracle_summary_content.content | b64decode }}"
-  when:
-    - oracle_summary_content is defined
-    - oracle_summary_content.content is defined
 
 - name: Send Oracle results to Splunk (if enabled)
   include_tasks: splunk_integration.yml

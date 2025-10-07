@@ -1,31 +1,26 @@
 ---
 # Cleanup tasks for MSSQL InSpec role
 
-- name: Generate summary report
-  template:
-    src: summary_report.j2
-    dest: "{{ inspec_results_dir }}/summary_report_{{ ansible_date_time.epoch }}.txt"
-  register: summary_report_result
+- name: Generate and display summary report
+  block:
+    - name: Generate summary report
+      template:
+        src: summary_report.j2
+        dest: "{{ inspec_results_dir }}/summary_report_{{ ansible_date_time.epoch }}.txt"
+      register: summary_report_result
+
+    - name: Read summary report content
+      slurp:
+        src: "{{ summary_report_result.dest }}"
+      register: summary_report_content
+
+    - name: Display summary report
+      debug:
+        msg: "{{ summary_report_content.content | b64decode }}"
   when:
     - generate_summary_report | default(true)
     - inspec_results is defined
   delegate_to: "{{ inspec_delegate_host }}"
-
-- name: Read summary report content
-  slurp:
-    src: "{{ summary_report_result.dest }}"
-  register: summary_report_content
-  when:
-    - summary_report_result is defined
-    - summary_report_result.dest is defined
-  delegate_to: "{{ inspec_delegate_host }}"
-
-- name: Display summary report
-  debug:
-    msg: "{{ summary_report_content.content | b64decode }}"
-  when:
-    - summary_report_content is defined
-    - summary_report_content.content is defined
 
 - name: Clean up temporary directory
   file:

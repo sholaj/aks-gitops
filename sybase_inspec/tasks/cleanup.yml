@@ -1,32 +1,27 @@
 ---
 # Sybase cleanup and reporting tasks
 
-- name: Generate Sybase summary report
-  template:
-    src: sybase_summary_report.j2
-    dest: "{{ inspec_results_dir }}/sybase_summary_{{ ansible_date_time.epoch }}.txt"
-  register: sybase_summary_report_result
+- name: Generate and display Sybase summary report
+  block:
+    - name: Generate Sybase summary report
+      template:
+        src: sybase_summary_report.j2
+        dest: "{{ inspec_results_dir }}/sybase_summary_{{ ansible_date_time.epoch }}.txt"
+      register: sybase_summary_report_result
+
+    - name: Read Sybase summary report content
+      slurp:
+        src: "{{ sybase_summary_report_result.dest }}"
+      register: sybase_summary_content
+
+    - name: Display Sybase summary report
+      debug:
+        msg: "{{ sybase_summary_content.content | b64decode }}"
   when:
     - generate_summary_report | default(true)
     - sybase_final_results is defined
   ignore_errors: true
   delegate_to: "{{ inspec_delegate_host }}"
-
-- name: Read Sybase summary report content
-  slurp:
-    src: "{{ sybase_summary_report_result.dest }}"
-  register: sybase_summary_content
-  when:
-    - sybase_summary_report_result is defined
-    - sybase_summary_report_result.dest is defined
-  delegate_to: "{{ inspec_delegate_host }}"
-
-- name: Display Sybase summary report
-  debug:
-    msg: "{{ sybase_summary_content.content | b64decode }}"
-  when:
-    - sybase_summary_content is defined
-    - sybase_summary_content.content is defined
 
 - name: Send Sybase results to Splunk (if enabled)
   include_tasks: splunk_integration.yml
