@@ -5,11 +5,23 @@
   template:
     src: oracle_summary_report.j2
     dest: "{{ inspec_results_dir }}/oracle_summary_{{ ansible_date_time.epoch }}.txt"
+  register: oracle_summary_report_result
   when:
     - generate_summary_report | default(true)
     - oracle_inspec_results is defined
   ignore_errors: true
   delegate_to: "{{ inspec_delegate_host }}"
+
+- name: Display Oracle summary report location
+  debug:
+    msg: |
+      [OK] Oracle summary report generated
+      Location: {{ oracle_summary_report_result.dest }}
+      Server: {{ oracle_server }}:{{ oracle_port }}
+      Database: {{ oracle_database }}
+  when:
+    - oracle_summary_report_result is defined
+    - oracle_summary_report_result.dest is defined
 
 - name: Send Oracle results to Splunk (if enabled)
   include_tasks: splunk_integration.yml

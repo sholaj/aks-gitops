@@ -5,11 +5,23 @@
   template:
     src: sybase_summary_report.j2
     dest: "{{ inspec_results_dir }}/sybase_summary_{{ ansible_date_time.epoch }}.txt"
+  register: sybase_summary_report_result
   when:
     - generate_summary_report | default(true)
     - sybase_final_results is defined
   ignore_errors: true
   delegate_to: "{{ inspec_delegate_host }}"
+
+- name: Display Sybase summary report location
+  debug:
+    msg: |
+      [OK] Sybase summary report generated
+      Location: {{ sybase_summary_report_result.dest }}
+      Server: {{ sybase_server }}:{{ sybase_port }}
+      Database: {{ sybase_database }}
+  when:
+    - sybase_summary_report_result is defined
+    - sybase_summary_report_result.dest is defined
 
 - name: Send Sybase results to Splunk (if enabled)
   include_tasks: splunk_integration.yml

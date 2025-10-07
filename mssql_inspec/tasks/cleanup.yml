@@ -5,10 +5,21 @@
   template:
     src: summary_report.j2
     dest: "{{ inspec_results_dir }}/summary_report_{{ ansible_date_time.epoch }}.txt"
+  register: summary_report_result
   when:
     - generate_summary_report | default(true)
     - inspec_results is defined
   delegate_to: "{{ inspec_delegate_host }}"
+
+- name: Display summary report location
+  debug:
+    msg: |
+      [OK] Summary report generated
+      Location: {{ summary_report_result.dest }}
+      Server: {{ mssql_server }}:{{ mssql_port }}
+  when:
+    - summary_report_result is defined
+    - summary_report_result.dest is defined
 
 - name: Clean up temporary directory
   file:
