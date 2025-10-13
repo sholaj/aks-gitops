@@ -192,3 +192,150 @@ As a DevOps engineer, I want comprehensive documentation so that others can run 
 1. Write role-level READMEs and a top-level guide describing end-to-end usage.
 2. Add sample commands and expected outputs for common scenarios.
 3. Capture known issues and troubleshooting tips informed by early test runs.
+
+
+# Jira Tickets
+
+🧾 Ticket 1 — Sybase Sample Database Request
+
+Title:
+
+[DB Corp] Request Sybase Sample Database for InSpec Scanning Validation
+
+⸻
+
+Description:
+
+As a DevOps engineer, I want a Sybase sample database instance provisioned for testing and validating the Ansible-based InSpec scanning workflow, so that we can confirm connectivity, authentication, and compliance data collection prior to onboarding production databases.
+
+This sample database will be used to test:
+	•	End-to-end scanning via Ansible AAP2.
+	•	Credential authentication (via local or service account).
+	•	InSpec profile compatibility with Sybase schema and controls.
+
+⸻
+
+Tasks:
+	1.	Submit a request to the Database Engineering team to provision a Sybase test instance in the CORP DEV environment.
+	2.	Specify minimum configuration:
+	•	Database name: SYBASE_INSPEC_TEST
+	•	Version: Sybase ASE 16.x
+	•	Listener port: 1025 (configurable)
+	•	Accessible from Ansible AAP2 delegate host.
+	3.	Request standard DB user for scan validation:
+	•	Username: nist_scan_user
+	•	Read-only permissions.
+	4.	Validate:
+	•	Network connectivity between delegate host and Sybase instance.
+	•	Authentication using the scan account credentials.
+	•	Execution of a simple InSpec profile (SYBASE16_ruby).
+	5.	Capture and document test results:
+	•	Successful JSON output.
+	•	Example of control pass/fail data.
+	6.	Store connection details and validation outputs in Confluence under “Sybase Test Validation”.
+
+⸻
+
+Acceptance Criteria:
+	•	A Sybase test database (SYBASE_INSPEC_TEST) is provisioned and reachable from Ansible AAP2 delegate hosts.
+	•	Read-only scan account (nist_scan_user) created and validated.
+	•	InSpec scan runs successfully using the Ansible sybase_scan role.
+	•	JSON output stored and validated in test results directory (results/sybase/...).
+	•	Documentation updated in Confluence with connectivity, credentials, and test results.
+
+⸻
+
+🧾 Ticket 2 — Oracle Sample Database Request
+
+Title:
+
+[DB Corp] Request Oracle Sample Database for InSpec Scanning Validation
+
+⸻
+
+Description:
+
+As a DevOps engineer, I want an Oracle sample database instance provisioned for validating InSpec scanning via Ansible AAP2, so that we can confirm the Oracle scanning role, profiles, and connection logic function correctly before applying them to controlled environments.
+
+This environment will be used for functional testing of the oracle_scan Ansible role and associated InSpec profiles.
+
+⸻
+
+Tasks:
+	1.	Raise a request to the DBA team for a non-production Oracle test instance.
+	2.	Specify configuration requirements:
+	•	Database name: ORACLE_INSPEC_TEST
+	•	Version: Oracle 19c preferred (compatible with MSSQL2019_ruby and ORACLE19_ruby control sets).
+	•	Listener port: 1521.
+	•	Accessible from Ansible AAP2 delegate host.
+	3.	Request dedicated scan user:
+	•	Username: nist_scan_user
+	•	Role: CONNECT, SELECT_CATALOG_ROLE (read-only).
+	4.	Validate:
+	•	Network reachability (port 1521).
+	•	Authentication and connectivity via AAP2.
+	•	Execution of baseline Oracle InSpec profile.
+	5.	Collect and document:
+	•	JSON report from the scan.
+	•	Example pass/fail control outputs.
+	•	Connection logs (to validate credential handling).
+	6.	Update Confluence with:
+	•	DB connection details.
+	•	Scan outcomes.
+	•	Lessons learned for production rollout.
+
+⸻
+
+Acceptance Criteria:
+	•	Oracle sample database (ORACLE_INSPEC_TEST) created and reachable from delegate host.
+	•	Scan user (nist_scan_user) provisioned and validated.
+	•	Ansible oracle_scan role runs successfully and generates JSON report under results/oracle.
+	•	Connectivity, profile compatibility, and authentication verified.
+	•	Documentation published in Confluence with screenshots and output examples.
+
+
+
+
+
+Title:
+
+[DB Corp] Request Service Account for Ansible AAP2 Database Scanning
+
+⸻
+
+Description:
+
+As a DevOps engineer, I want a dedicated service account created to enable Ansible Automation Platform (AAP2) to connect to delegate hosts and execute database scanning playbooks.
+This account will be used by AAP2 job templates to authenticate against delegate nodes and database instances (MSSQL, Oracle, Sybase) for compliance scanning activities.
+
+The purpose of the account is to provide a secure, managed identity for automated execution of database compliance scans initiated by Ansible AAP2, ensuring credentials are centrally governed and auditable.
+
+⸻
+
+Tasks:
+	1.	Raise a request to the AD/Identity team to create the required service account.
+	2.	Include necessary account details in the request:
+	•	Account name and description (Ansible DB Scan Service Account).
+	•	Security group membership (existing or new group).
+	•	Business justification (required for AAP2 automation).
+	•	Account owner and approval workflow.
+	3.	Obtain approvals from:
+	•	Team Lead / Manager (Robert Clive).
+	•	SVP and ISO (attach approval chain to request).
+	4.	Submit the final approved request to SPSS-WINAD@statestreet.com for account creation.
+	5.	Once created, store account credentials securely (e.g., in Ansible Vault).
+	6.	Update Ansible AAP2 credential configuration to use the new service account for connecting to delegate hosts.
+	7.	Validate authentication from AAP2 → Delegate host → Database instance.
+	8.	Document configuration steps and link Confluence record.
+
+⸻
+
+Acceptance Criteria:
+	•	Service account is created in AD and functional for use by Ansible AAP2.
+	•	Account permissions allow connection from AAP2 to delegate hosts and subsequent DB access for scanning.
+	•	Approval chain (Manager, SVP, ISO) attached to the request.
+	•	Account credentials are stored securely (Vault / Secret Manager).
+	•	Connectivity validated:
+	•	AAP2 connects to delegate host successfully.
+	•	Delegate host executes DB scan playbook and connects to DB instances (MSSQL/Oracle/Sybase).
+	•	Confluence page updated with setup and account maintenance process.
