@@ -120,6 +120,39 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 
 *Storage costs vary based on PV size, change rate, retention policy, and snapshot frequency
 
+#### 3.1.1 Pricing Source and Validation
+
+**For Finance Traceability:**
+
+**SKU Information**:
+- **Product**: Azure Backup for Azure Kubernetes Service (AKS)
+- **Protected Instance Type**: AKS Namespace
+- **Billing Unit**: Per namespace per month (not prorated)
+- **Meter Name**: AKS Protected Instance
+
+**USD Base Pricing**:
+- **US Price**: $12.00 USD per namespace per month
+- **Source**: Microsoft Learn Q&A (Official Microsoft Community)
+- **URL**: https://learn.microsoft.com/en-us/answers/questions/2134031/azure-kubernetes-services-backup-pricing
+- **Confirmed**: January 2025
+
+**GBP Conversion**:
+- **Calculation**: $12.00 USD × 0.80 (exchange rate) = £9.60 GBP
+- **Rounded**: £10 GBP per namespace per month
+- **Exchange Rate Method**: Microsoft Azure uses London closing spot rates captured in the two business days prior to the last business day of the previous month
+- **Rate Applied**: Average USD/GBP rate of ~0.80 (January 2025: ranged 0.76-0.82)
+
+**Official Pricing Pages**:
+- **UK Pricing**: https://azure.microsoft.com/en-gb/pricing/details/backup/
+- **Pricing Calculator**: https://azure.microsoft.com/en-gb/pricing/calculator/ (Select "Backup" → "Azure Kubernetes Service")
+- **Azure Backup Pricing Documentation**: https://learn.microsoft.com/en-us/azure/backup/azure-backup-pricing
+
+**Notes for Finance**:
+1. Pricing is **not prorated** - full monthly charge applies regardless of usage days
+2. Storage costs (snapshots and blob storage) are separate and billed based on actual consumption
+3. Regional variations may apply - UK South and UK West pricing should be verified in Azure Calculator
+4. Enterprise Agreement (EA) customers may have negotiated rates - check EA price sheet
+
 ### 3.2 Alternative Solution Costs
 
 **Velero (Open Source)**:
