@@ -15,7 +15,7 @@ This document evaluates Azure Backup as a recovery mechanism for the UK8S shared
 - GitOps and Infrastructure as Code should remain the primary recovery mechanism
 - Azure Backup recommended for tenant namespace protection (selective adoption)
 - Velero recommended as cost-effective alternative for specific use cases
-- Estimated cost: £10-50/month for selective namespace protection (assuming 5-10 critical tenant namespaces)
+- Estimated cost: £50-95/month plus storage for selective namespace protection (assuming 5-10 critical tenant namespaces)
 
 ---
 
@@ -115,8 +115,8 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 | Scenario | Namespaces Protected | Monthly Base Cost | Est. Storage Cost* | Total Est. Monthly |
 |----------|---------------------|-------------------|-------------------|-------------------|
 | Minimal (Critical Tenants) | 5 | £50 | £15-40 | £65-90 |
-| Moderate (All Tenants) | 20 | £190 | £80-160 | £270-350 |
-| Full Platform | 40+ | £380+ | £160-400 | £540-780 |
+| Moderate (All Tenants) | 20 | £200 | £80-160 | £280-360 |
+| Full Platform | 40+ | £400+ | £160-400 | £560-800+ |
 
 *Storage costs vary based on PV size, change rate, retention policy, and snapshot frequency
 
@@ -295,11 +295,11 @@ Provide tenant teams with guidance on selecting backup approach:
 
 ## 8. Conclusion & Final Recommendation
 
-### 9.1 Summary
+### 8.1 Summary
 
 Azure Backup for AKS provides valuable capabilities for protecting tenant persistent data and supporting compliance requirements. However, it is **not a replacement for GitOps and Infrastructure as Code** as the primary platform recovery mechanism.
 
-### 9.2 Recommended Role for Azure Backup
+### 8.2 Recommended Role for Azure Backup
 
 **Azure Backup should play a LIMITED, COMPLEMENTARY role** in UK8S platform recovery:
 
@@ -315,7 +315,7 @@ Azure Backup for AKS provides valuable capabilities for protecting tenant persis
 - Cost-sensitive or non-critical tenant workloads (use Velero or GitOps)
 - Primary disaster recovery strategy (use multi-region architecture)
 
-### 9.3 Financial Justification
+### 8.3 Financial Justification
 
 **Estimated Annual Cost**: £575 - £1,150 per year (assuming 5-10 critical namespaces)
 
@@ -327,7 +327,7 @@ Azure Backup for AKS provides valuable capabilities for protecting tenant persis
 
 **Cost-Benefit Assessment**: **POSITIVE** for selective adoption of critical workloads
 
-### 9.4 Next Steps
+### 8.4 Next Steps
 
 1. **Approve pilot program** for Azure Backup on 2-3 critical tenant namespaces
 2. **Deploy Velero** as cost-effective backup for non-critical workloads
