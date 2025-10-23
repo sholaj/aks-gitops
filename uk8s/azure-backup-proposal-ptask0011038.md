@@ -15,7 +15,7 @@ This document evaluates Azure Backup as a recovery mechanism for the UK8S shared
 - GitOps and Infrastructure as Code should remain the primary recovery mechanism
 - Azure Backup recommended for tenant namespace protection (selective adoption)
 - Velero recommended as cost-effective alternative for specific use cases
-- Estimated cost: £50-95/month plus storage for selective namespace protection (assuming 5-10 critical tenant namespaces)
+- **⚠️ Cost estimates unavailable**: Conflicting pricing models identified (namespace vs. vCPU-based); official pricing verification required before proceeding
 
 ---
 
@@ -101,70 +101,85 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 
 ### 3.1 Azure Backup Pricing Model
 
-**Protected Instance Charges**:
-- **£10 per namespace per month** for each namespace configured for backup
-- Charged regardless of backup size or frequency
+**⚠️ CRITICAL: PRICING MODEL DISCREPANCY - REQUIRES IMMEDIATE CLARIFICATION**
 
-**Storage Charges**:
+**Conflicting Information Identified**:
+Two contradictory pricing models have been found for Azure Backup for AKS:
+
+1. **Namespace-Based Model** (from Microsoft Q&A - Unverified):
+   - Source: Microsoft Learn Q&A thread
+   - Claims: $12 USD per namespace per month
+   - Status: **UNVERIFIED AND POTENTIALLY INCORRECT**
+
+2. **vCPU-Based Model** (from Official Azure Pricing Page):
+   - Source: Azure official pricing documentation
+   - Claims: Protected instances defined by allocated vCPUs per cluster
+   - Status: **REQUIRES CONFIRMATION**
+
+**Impact on Cost Assessment**:
+The cost estimates in this document **CANNOT BE VALIDATED** until the correct pricing model is confirmed. Using namespace counts when the actual billing is vCPU-based will result in:
+- Significant under/over-estimation of costs
+- Incorrect chargeback models for tenant teams
+- Budget allocation errors
+- Failure to meet acceptance criteria for accurate cost assessment
+
+**Current Cost Estimates (Based on Unverified Namespace Model)**:
+
+⚠️ **These estimates are unreliable and for discussion purposes only**:
+
+| Scenario | Namespaces Protected | Est. Monthly Cost* | Status |
+|----------|---------------------|-------------------|---------|
+| Minimal (Critical Tenants) | 5 | £65-90 | UNVERIFIED |
+| Moderate (All Tenants) | 20 | £280-360 | UNVERIFIED |
+| Full Platform | 40+ | £560-800+ | UNVERIFIED |
+
+*Includes estimated storage costs; protected instance pricing unconfirmed
+
+**Storage Charges** (Separate from Protected Instance):
 - **Blob storage**: Standard blob storage rates for Vault Tier backups
 - **Disk snapshots**: Incremental snapshots charged at standard snapshot rates
 - **Snapshot storage**: Billed per GB-month based on incremental changes
 
-**Example Cost Scenarios for UK8S**:
+#### 3.1.1 Pricing Model Clarification Required
 
-| Scenario | Namespaces Protected | Monthly Base Cost | Est. Storage Cost* | Total Est. Monthly |
-|----------|---------------------|-------------------|-------------------|-------------------|
-| Minimal (Critical Tenants) | 5 | £50 | £15-40 | £65-90 |
-| Moderate (All Tenants) | 20 | £200 | £80-160 | £280-360 |
-| Full Platform | 40+ | £400+ | £160-400 | £560-800+ |
+**🚫 BLOCKING ISSUE: Official Pricing Model Must Be Confirmed**
 
-*Storage costs vary based on PV size, change rate, retention policy, and snapshot frequency
+**Required Actions Before Proceeding**:
+1. **Obtain official Azure Backup for AKS SKU documentation** from Microsoft Account Team
+2. **Confirm billing unit**: Is it namespace-based, vCPU-based, or cluster-based?
+3. **If vCPU-based**: Obtain vCPU tier breakpoints and pricing per tier
+4. **Obtain UK GBP pricing** from official Azure UK price sheet
+5. **Update cost estimates** based on verified pricing model
 
-#### 3.1.1 Pricing Source and Validation
+**Sources Requiring Reconciliation**:
 
-**For Finance Traceability:**
-
-**SKU Information**:
-- **Product**: Azure Backup for Azure Kubernetes Service (AKS)
-- **Protected Instance Type**: AKS Namespace
-- **Billing Unit**: Per namespace per month (not prorated)
-- **Meter Name**: AKS Protected Instance
-
-**USD Base Pricing**:
-- **US Price**: $12.00 USD per namespace per month
-- **Source**: Microsoft Learn Q&A (Official Microsoft Community)
+**Source 1: Microsoft Q&A (Namespace Model - Unverified)**
 - **URL**: https://learn.microsoft.com/en-us/answers/questions/2134031/azure-kubernetes-services-backup-pricing
-- **Confirmed**: January 2025
+- **Claims**: $12 USD per namespace per month
+- **Issue**: Community forum answer, not official pricing documentation
+- **Status**: Cannot be used for financial planning without official confirmation
 
-**GBP Conversion**:
-- **Calculation**: $12.00 USD × 0.80 (exchange rate) = £9.60 GBP
-- **Rounded**: £10 GBP per namespace per month
-- **Exchange Rate Method**: Microsoft Azure uses London closing spot rates captured in the two business days prior to the last business day of the previous month
-- **Rate Applied**: Average USD/GBP rate of ~0.80 (January 2025: ranged 0.76-0.82)
+**Source 2: Azure Official Pricing Page (vCPU Model - Needs Verification)**
+- **URL**: https://azure.microsoft.com/en-gb/pricing/details/backup/
+- **Claims**: Protected instances defined by allocated vCPUs per cluster
+- **Issue**: Pricing model structure not fully documented in this proposal
+- **Status**: Requires detailed vCPU tier pricing extraction
 
-**Official Pricing Pages**:
-- **UK Pricing**: https://azure.microsoft.com/en-gb/pricing/details/backup/
-- **Pricing Calculator**: https://azure.microsoft.com/en-gb/pricing/calculator/ (Select "Backup" → "Azure Kubernetes Service")
-- **Azure Backup Pricing Documentation**: https://learn.microsoft.com/en-us/azure/backup/azure-backup-pricing
+**Recommended Verification Methods**:
+1. **Azure Portal**: Subscriptions → Cost Management → Price Sheet (search for "AKS Backup" or "Backup - AKS")
+2. **Azure Pricing Calculator**: https://azure.microsoft.com/en-gb/pricing/calculator/ (select "Backup" → "Azure Kubernetes Service")
+3. **Microsoft Account Team**: Request official AKS Backup SKU pricing document
+4. **Azure Retail Prices API**:
+   ```
+   https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Backup' and productName eq 'Azure Backup for AKS' and armRegionName eq 'uksouth'
+   ```
+5. **EA/MCA Price Sheet**: If organization has Enterprise Agreement, verify in EA portal
 
 **Notes for Finance**:
-1. Pricing is **not prorated** - full monthly charge applies regardless of usage days
-2. Storage costs (snapshots and blob storage) are separate and billed based on actual consumption
-3. Regional variations may apply - UK South and UK West pricing should be verified in Azure Calculator
-4. Enterprise Agreement (EA) customers may have negotiated rates - check EA price sheet
-
-**⚠️ VALIDATION REQUIRED BEFORE SIGN-OFF**:
-The £10 protected-instance rate must be validated against the current Azure price sheet before final approval. While the $12 USD figure is confirmed via Microsoft Q&A, official Azure UK price sheets may show different rates due to:
-- Regional pricing adjustments
-- Currency fluctuations since pricing was published
-- EA/MCA contract-specific rates
-- Azure price sheet version/effective date
-
-**Recommended Action**: Finance should verify this rate using:
-1. Azure UK Price Sheet via Azure Portal (Subscriptions → Cost Management → Price Sheet)
-2. Azure Pricing Calculator (https://azure.microsoft.com/en-gb/pricing/calculator/) with UK region selected
-3. Microsoft Account Team for EA/MCA price confirmation
-4. Azure Retail Prices API: https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Backup' and armRegionName eq 'uksouth'
+- Cost estimates in this document are **PRELIMINARY AND UNRELIABLE** until pricing model is confirmed
+- Multi-tenant chargeback model cannot be designed without accurate pricing unit
+- Pilot program budget allocation should include contingency for pricing model uncertainty
+- Enterprise Agreement (EA) customers may have negotiated rates separate from public pricing
 
 ### 3.2 Alternative Solution Costs
 
@@ -212,11 +227,12 @@ The £10 protected-instance rate must be validated against the current Azure pri
 ### 4.3 Limitations for UK8S Platform
 
 1. **Infrastructure Scope Gap**: Does not protect cluster infrastructure, networking, or Azure resources
-2. **Cost at Scale**: £10/namespace becomes expensive with 30-50 tenant namespaces
+2. **Cost at Scale**: Protected instance pricing may become expensive with 30-50 tenant namespaces (pricing model unconfirmed)
 3. **Platform Services Mismatch**: GitOps redeploy faster than backup restore for stateless services
 4. **Storage Type Limitation**: Only supports Azure Disk CSI; no Azure Files or blob support
 5. **Cross-Subscription Constraint**: Cannot restore across subscriptions (limits multi-cluster strategies)
 6. **Manual Conflict Resolution**: Requires manual resource deletion before restore
+7. **Pricing Uncertainty**: Conflicting pricing models (namespace vs. vCPU-based) create cost estimation challenges
 
 ---
 
@@ -237,7 +253,7 @@ The £10 protected-instance rate must be validated against the current Azure pri
 #### Tier 1: Critical Tenant Namespaces with Persistent Data
 **Solution**: Azure Backup
 **Scope**: 5-10 critical tenant namespaces with stateful applications (databases, file storage)
-**Cost**: ~£50-95/month + storage
+**Cost**: **UNVERIFIED** - Estimated ~£50-95/month + storage (based on unconfirmed namespace pricing model)
 **Justification**:
 - Business-critical data requires enterprise-grade backup
 - Azure-native integration simplifies management
@@ -298,7 +314,7 @@ Provide tenant teams with guidance on selecting backup approach:
                     ▼
             ┌──────────────┐
             │ Azure Backup │ ← Recommended
-            │  (£10/month) │
+            │ (Price TBD)  │
             └──────────────┘
 
   ┌─────────────┐                   ┌──────────────┐
@@ -320,11 +336,14 @@ Provide tenant teams with guidance on selecting backup approach:
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|-----------|------------|
+| **Pricing model uncertainty leads to budget overruns** | **High** | **High** | **Contact Microsoft Account Team immediately; verify pricing via Azure Portal price sheet; include contingency in pilot budget** |
+| Actual costs differ significantly from estimates | High | High | Validate pricing before pilot; implement cost alerts; monitor actual spend vs. estimates |
 | Backup costs exceed budget as platform scales | Medium | High | Implement selective backup strategy; use Velero for non-critical workloads |
 | RTO not met during actual disaster | High | Low | Regular restore testing; maintain GitOps as primary recovery path |
 | Backup extension introduces cluster instability | Medium | Low | Deploy to non-prod first; monitor extension resource usage |
 | Teams over-rely on backup instead of GitOps | Medium | Medium | Education and documentation emphasizing GitOps-first approach |
 | Storage costs grow unexpectedly | Low | Medium | Implement retention policies; monitor snapshot growth; regular cleanup |
+| Chargeback model incorrect due to wrong pricing unit | High | High | Do not implement chargeback until pricing model confirmed; update finance model post-verification |
 
 ---
 
@@ -332,7 +351,7 @@ Provide tenant teams with guidance on selecting backup approach:
 
 **Backup is considered successful for UK8S if**:
 1. Critical tenant data can be restored within defined RTO (< 1 hour for Operational Tier)
-2. Backup costs remain within budget allocation (< £160/month initially)
+2. Backup costs remain within budget allocation (budget TBD after pricing clarification)
 3. Backup operations do not impact cluster performance or stability
 4. Restore testing demonstrates 95%+ success rate
 5. GitOps remains primary recovery mechanism (backup as safety net)
@@ -363,24 +382,43 @@ Azure Backup for AKS provides valuable capabilities for protecting tenant persis
 
 ### 8.3 Financial Justification
 
-**Estimated Annual Cost**: £575 - £1,150 per year (assuming 5-10 critical namespaces)
+**⚠️ Financial Analysis Incomplete - Pending Pricing Clarification**
 
-**Value Proposition**:
+**Estimated Annual Cost**: **UNVERIFIED** - Estimated £575-£1,150 per year based on unconfirmed namespace pricing model (5-10 namespaces)
+
+**Note**: This estimate is based on an unverified namespace-based pricing model. If Azure uses vCPU-based pricing tiers, actual costs may differ significantly. Financial justification cannot be completed until official pricing model is confirmed.
+
+**Value Proposition** (Independent of Pricing Model):
 - Protects high-value tenant data that cannot be easily recreated
 - Reduces recovery time for data loss scenarios
 - Provides compliance evidence for regulated workloads
 - Enables tenant self-service backup capabilities
 
-**Cost-Benefit Assessment**: **POSITIVE** for selective adoption of critical workloads
+**Cost-Benefit Assessment**: **CANNOT BE DETERMINED** until accurate pricing is obtained
 
 ### 8.4 Next Steps
 
-1. **Validate Azure Backup pricing** against current UK price sheet via Azure Portal or Microsoft Account Team (blocking item before approval)
-2. **Approve pilot program** for Azure Backup on 2-3 critical tenant namespaces
-3. **Deploy Velero** as cost-effective backup for non-critical workloads
-4. **Document tenant guidance** for backup solution selection
-5. **Establish cost tracking** and chargeback model for backup services
-6. **Review quarterly** to assess effectiveness and adjust strategy
+**🚫 BLOCKING ITEMS (Must Complete Before Approval)**:
+
+1. **Clarify Azure Backup pricing model** - Resolve discrepancy between namespace-based and vCPU-based pricing models
+   - Contact Microsoft Account Team for official SKU documentation
+   - Obtain vCPU tier structure if applicable
+   - Verify UK GBP pricing through Azure Portal price sheet or EA portal
+
+2. **Recalculate cost estimates** - Update all cost scenarios based on verified pricing model
+   - Recalculate Tier 1 (Critical Tenants) costs
+   - Recalculate Financial Justification (Section 8.3)
+   - Update Success Criteria budget thresholds (Section 7)
+
+**Post-Pricing Verification Actions**:
+
+3. **Approve pilot program** for Azure Backup on 2-3 critical tenant namespaces
+4. **Deploy Velero** as cost-effective backup for non-critical workloads
+5. **Document tenant guidance** for backup solution selection
+6. **Establish cost tracking** and chargeback model for backup services
+7. **Review quarterly** to assess effectiveness and adjust strategy
+
+**Document Status**: **ON HOLD pending pricing model clarification** - Does not meet acceptance criteria for accurate cost assessment until resolved
 
 ---
 
@@ -394,6 +432,7 @@ Azure Backup for AKS provides valuable capabilities for protecting tenant persis
 
 ---
 
-**Document Status**: Ready for Review
+**Document Status**: ⚠️ **DRAFT - ON HOLD** (Pending pricing model clarification)
+**Blocking Issue**: Azure Backup pricing model discrepancy (namespace vs. vCPU-based) must be resolved
 **Approvers**: UK8S Product Owner, Platform Team Lead, Finance
-**Next Review Date**: 2025-11-21 (Post-Pilot)
+**Next Review Date**: TBD (After pricing verification complete)
