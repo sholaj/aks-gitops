@@ -15,7 +15,7 @@ This document evaluates Azure Backup as a recovery mechanism for the UK8S shared
 - GitOps and Infrastructure as Code should remain the primary recovery mechanism
 - Azure Backup recommended for tenant namespace protection (selective adoption)
 - Velero recommended as cost-effective alternative for specific use cases
-- Estimated cost: $12-60/month for selective namespace protection (assuming 5-10 critical tenant namespaces)
+- Estimated cost: £10-50/month for selective namespace protection (assuming 5-10 critical tenant namespaces)
 
 ---
 
@@ -102,7 +102,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 ### 3.1 Azure Backup Pricing Model
 
 **Protected Instance Charges**:
-- **$12 per namespace per month** for each namespace configured for backup
+- **£10 per namespace per month** for each namespace configured for backup
 - Charged regardless of backup size or frequency
 
 **Storage Charges**:
@@ -114,27 +114,27 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 
 | Scenario | Namespaces Protected | Monthly Base Cost | Est. Storage Cost* | Total Est. Monthly |
 |----------|---------------------|-------------------|-------------------|-------------------|
-| Minimal (Critical Tenants) | 5 | $60 | $20-50 | $80-110 |
-| Moderate (All Tenants) | 20 | $240 | $100-200 | $340-440 |
-| Full Platform | 40+ | $480+ | $200-500 | $680-980 |
+| Minimal (Critical Tenants) | 5 | £50 | £15-40 | £65-90 |
+| Moderate (All Tenants) | 20 | £190 | £80-160 | £270-350 |
+| Full Platform | 40+ | £380+ | £160-400 | £540-780 |
 
 *Storage costs vary based on PV size, change rate, retention policy, and snapshot frequency
 
 ### 3.2 Alternative Solution Costs
 
 **Velero (Open Source)**:
-- **License cost**: $0 (Apache 2.0 license)
-- **Storage cost**: Blob storage only (~$20-100/month depending on retention)
+- **License cost**: £0 (Apache 2.0 license)
+- **Storage cost**: Blob storage only (~£15-80/month depending on retention)
 - **Operational cost**: Staff time for setup, maintenance, monitoring
 - **Support**: Community-based (no guaranteed SLA)
 
 **Kasten K10 (Commercial)**:
 - **License cost**: Vendor-specific (typically per-node or per-namespace)
 - **Advanced features**: Enterprise support, automated DR, multi-cloud
-- **Cost range**: Estimated $5,000-20,000+ annually for enterprise deployment
+- **Cost range**: Estimated £4,000-16,000+ annually for enterprise deployment
 
 **GitOps + IaC (Current Approach)**:
-- **License cost**: $0 (using Flux, Terraform, etc.)
+- **License cost**: £0 (using Flux, Terraform, etc.)
 - **Storage cost**: Minimal (Git repository storage)
 - **Operational benefit**: Declarative, version-controlled, auditable
 - **Limitation**: Does not protect persistent data
@@ -166,7 +166,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 ### 4.3 Limitations for UK8S Platform
 
 1. **Infrastructure Scope Gap**: Does not protect cluster infrastructure, networking, or Azure resources
-2. **Cost at Scale**: $12/namespace becomes expensive with 30-50 tenant namespaces
+2. **Cost at Scale**: £10/namespace becomes expensive with 30-50 tenant namespaces
 3. **Platform Services Mismatch**: GitOps redeploy faster than backup restore for stateless services
 4. **Storage Type Limitation**: Only supports Azure Disk CSI; no Azure Files or blob support
 5. **Cross-Subscription Constraint**: Cannot restore across subscriptions (limits multi-cluster strategies)
@@ -191,7 +191,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 #### Tier 1: Critical Tenant Namespaces with Persistent Data
 **Solution**: Azure Backup
 **Scope**: 5-10 critical tenant namespaces with stateful applications (databases, file storage)
-**Cost**: ~$60-120/month + storage
+**Cost**: ~£50-95/month + storage
 **Justification**:
 - Business-critical data requires enterprise-grade backup
 - Azure-native integration simplifies management
@@ -207,7 +207,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 #### Tier 2: Platform Services & Non-Critical Tenants
 **Solution**: GitOps + Velero (Optional)
 **Scope**: Platform namespaces (ingress, monitoring, logging) and non-critical tenant apps
-**Cost**: $0 (GitOps) or ~$50-100/month (Velero with blob storage)
+**Cost**: £0 (GitOps) or ~£40-80/month (Velero with blob storage)
 **Justification**:
 - GitOps provides declarative redeploy faster than backup restore
 - Velero offers cost-effective backup for non-critical workloads
@@ -220,7 +220,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 #### Tier 3: Cluster Infrastructure
 **Solution**: Infrastructure as Code (Terraform/Bicep)
 **Scope**: AKS cluster, node pools, networking, Azure resources
-**Cost**: $0 (existing practice)
+**Cost**: £0 (existing practice)
 **Justification**:
 - IaC enables rapid cluster recreation
 - Version-controlled infrastructure changes
@@ -252,7 +252,7 @@ Provide tenant teams with guidance on selecting backup approach:
                     ▼
             ┌──────────────┐
             │ Azure Backup │ ← Recommended
-            │  ($12/month) │
+            │  (£10/month) │
             └──────────────┘
 
   ┌─────────────┐                   ┌──────────────┐
@@ -286,7 +286,7 @@ Provide tenant teams with guidance on selecting backup approach:
 
 **Backup is considered successful for UK8S if**:
 1. Critical tenant data can be restored within defined RTO (< 1 hour for Operational Tier)
-2. Backup costs remain within budget allocation (< $200/month initially)
+2. Backup costs remain within budget allocation (< £160/month initially)
 3. Backup operations do not impact cluster performance or stability
 4. Restore testing demonstrates 95%+ success rate
 5. GitOps remains primary recovery mechanism (backup as safety net)
@@ -317,7 +317,7 @@ Azure Backup for AKS provides valuable capabilities for protecting tenant persis
 
 ### 9.3 Financial Justification
 
-**Estimated Annual Cost**: $720 - $1,440 per year (assuming 5-10 critical namespaces)
+**Estimated Annual Cost**: £575 - £1,150 per year (assuming 5-10 critical namespaces)
 
 **Value Proposition**:
 - Protects high-value tenant data that cannot be easily recreated
