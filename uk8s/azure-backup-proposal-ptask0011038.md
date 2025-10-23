@@ -134,7 +134,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 - **Cost range**: Estimated £4,000-16,000+ annually for enterprise deployment
 
 **GitOps + IaC (Current Approach)**:
-- **License cost**: £0 (using Flux, Terraform, etc.)
+- **License cost**: £0 (using Flux, ARM templates/Bicep, etc.)
 - **Storage cost**: Minimal (Git repository storage)
 - **Operational benefit**: Declarative, version-controlled, auditable
 - **Limitation**: Does not protect persistent data
@@ -147,7 +147,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 
 | Recovery Scenario | Azure Backup Fit | Recommended Approach | Rationale |
 |------------------|------------------|---------------------|-----------|
-| **Cluster Infrastructure Failure** | Poor | GitOps + Terraform | Infrastructure is code-defined; backup doesn't restore control plane, networking, or Azure resources |
+| **Cluster Infrastructure Failure** | Poor | GitOps + ARM templates | Infrastructure is code-defined; backup doesn't restore control plane, networking, or Azure resources |
 | **Platform Services Failure** | Moderate | GitOps + Helm | Platform services are declaratively defined; faster to redeploy than restore |
 | **Tenant Namespace Deletion** | Good | Azure Backup or Velero | Namespace-level granular restore valuable for accidental deletions |
 | **Persistent Volume Data Loss** | Excellent | Azure Backup | Protects Azure Disk PVs with point-in-time recovery |
@@ -179,7 +179,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 ### 5.1 Hybrid Recovery Architecture
 
 **Primary Recovery Mechanism**: **GitOps + Infrastructure as Code**
-- All platform infrastructure defined in Terraform/Bicep
+- All platform infrastructure defined in ARM templates/Bicep
 - All platform services and configurations managed via Flux GitOps
 - Git repository serves as source of truth for cluster state
 - Automated reconciliation prevents configuration drift
@@ -218,7 +218,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 - Velero: Daily backups, 14-day retention, blob storage backend
 
 #### Tier 3: Cluster Infrastructure
-**Solution**: Infrastructure as Code (Terraform/Bicep)
+**Solution**: Infrastructure as Code (ARM templates/Bicep)
 **Scope**: AKS cluster, node pools, networking, Azure resources
 **Cost**: £0 (existing practice)
 **Justification**:
@@ -228,7 +228,7 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 
 **Configuration**:
 - All infrastructure defined in Git-managed IaC
-- Terraform state stored in Azure Storage with versioning
+- ARM templates (and compiled Bicep files) stored in Git with version history
 - Automated cluster provisioning pipelines
 
 ### 5.3 Decision Matrix for Teams
@@ -310,7 +310,7 @@ Azure Backup for AKS provides valuable capabilities for protecting tenant persis
 - Enabling cross-region disaster recovery for specific high-value workloads
 
 **Not Recommended For**:
-- Platform infrastructure recovery (use Terraform/Bicep)
+- Platform infrastructure recovery (use ARM templates/Bicep)
 - Platform services recovery (use GitOps/Flux)
 - Cost-sensitive or non-critical tenant workloads (use Velero or GitOps)
 - Primary disaster recovery strategy (use multi-region architecture)
