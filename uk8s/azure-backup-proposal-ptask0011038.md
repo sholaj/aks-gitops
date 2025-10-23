@@ -153,6 +153,19 @@ Azure Backup for AKS is a cloud-native backup solution providing:
 3. Regional variations may apply - UK South and UK West pricing should be verified in Azure Calculator
 4. Enterprise Agreement (EA) customers may have negotiated rates - check EA price sheet
 
+**⚠️ VALIDATION REQUIRED BEFORE SIGN-OFF**:
+The £10 protected-instance rate must be validated against the current Azure price sheet before final approval. While the $12 USD figure is confirmed via Microsoft Q&A, official Azure UK price sheets may show different rates due to:
+- Regional pricing adjustments
+- Currency fluctuations since pricing was published
+- EA/MCA contract-specific rates
+- Azure price sheet version/effective date
+
+**Recommended Action**: Finance should verify this rate using:
+1. Azure UK Price Sheet via Azure Portal (Subscriptions → Cost Management → Price Sheet)
+2. Azure Pricing Calculator (https://azure.microsoft.com/en-gb/pricing/calculator/) with UK region selected
+3. Microsoft Account Team for EA/MCA price confirmation
+4. Azure Retail Prices API: https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Backup' and armRegionName eq 'uksouth'
+
 ### 3.2 Alternative Solution Costs
 
 **Velero (Open Source)**:
@@ -362,11 +375,12 @@ Azure Backup for AKS provides valuable capabilities for protecting tenant persis
 
 ### 8.4 Next Steps
 
-1. **Approve pilot program** for Azure Backup on 2-3 critical tenant namespaces
-2. **Deploy Velero** as cost-effective backup for non-critical workloads
-3. **Document tenant guidance** for backup solution selection
-4. **Establish cost tracking** and chargeback model for backup services
-5. **Review quarterly** to assess effectiveness and adjust strategy
+1. **Validate Azure Backup pricing** against current UK price sheet via Azure Portal or Microsoft Account Team (blocking item before approval)
+2. **Approve pilot program** for Azure Backup on 2-3 critical tenant namespaces
+3. **Deploy Velero** as cost-effective backup for non-critical workloads
+4. **Document tenant guidance** for backup solution selection
+5. **Establish cost tracking** and chargeback model for backup services
+6. **Review quarterly** to assess effectiveness and adjust strategy
 
 ---
 
